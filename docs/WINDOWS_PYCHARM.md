@@ -103,6 +103,35 @@ KPI summary similar to the one in the project README (≈ 79 % win-rate,
 
 ---
 
+## 5b. Sanity-check connectivity before going live
+
+Before flipping the live runner on, **double-click `scripts\check_connectivity.bat`**.
+The script runs four steps and prints `[PASS]` / `[FAIL]` for each:
+
+```
+==> 1. Proxy reachability (QS_PROXY_URL / HTTPS_PROXY)
+    [PASS] reached 127.0.0.1:1080 (socks5h)
+==> 2. Public testnet endpoint (server time + market list)
+    [PASS] server time = ...
+    [PASS] loaded 704 testnet markets
+==> 3. Authenticated calls (balance + open positions)
+    [PASS] USDT balance: 10000.00
+    [PASS] fetch_positions returned ...
+==> 4. Round-trip limit order (place + cancel)
+    [PASS] order accepted ...
+    [PASS] order cancelled cleanly
+
+ALL CHECKS PASSED ✓
+```
+
+If you see a `[FAIL]` it prints a hint — most common causes are:
+* **proxy not running** → start your Clash/V2Ray client first.
+* **451 / restricted location** → try a different node (HK / JP / SG residential preferred).
+* **Wrong API keys** → must be a Futures **testnet** key from
+  <https://testnet.binancefuture.com>, not mainnet, not spot testnet.
+* **0 USDT in testnet account** → use the *Faucet* button on the testnet UI
+  to top up.
+
 ## 6. Dry-run the live bot
 
 ```powershell
