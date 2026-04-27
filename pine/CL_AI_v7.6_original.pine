@@ -1,0 +1,2126 @@
+//@version=6
+indicator("CL·AI v7.6", overlay=true,
+          max_bars_back=1500, max_lines_count=500,
+          max_boxes_count=500, max_labels_count=500)
+
+// ════════════════════════════════════════════════════════════
+// ██  输入参数
+// ════════════════════════════════════════════════════════════
+
+bi_min_k           = input.int(4,    "笔最少K线数(含端点)",  minval=1,    maxval=20,    group="📈 缠论核心")
+inclusion_mode     = input.int(1,    "判断包含",            minval=0,    maxval=1,     group="📈 缠论核心")
+inc_equal_high     = input.int(0,    "两高相等取前高",      minval=0,    maxval=1,     group="📈 缠论核心")
+inc_take_max       = input.int(1,    "包含取最高最低点",    minval=0,    maxval=1,     group="📈 缠论核心")
+init_dir           = input.int(-1,   "初始方向",            minval=-1,   maxval=1,     group="📈 缠论核心")
+fx_confirm_bars    = input.int(3,    "分型确认右侧K线数",   minval=1,    maxval=5,     group="📈 缠论核心")
+
+enable_duan        = input.bool(true,  "启用段识别",          group="📐 段分析")
+enable_high_duan   = input.bool(true,  "启用大级别段识别",    group="📐 段分析")
+
+show_bi            = input.bool(true,  "显示笔",             group="🎨 显示")
+show_duan          = input.bool(true,  "显示段",             group="🎨 显示")
+show_high_duan     = input.bool(true,  "显示大级别段",       group="🎨 显示")
+show_zh_price      = input.bool(true,  "显示中枢价格",       group="🎨 显示")
+show_bi_zh         = input.bool(true,  "显示笔中枢",         group="🎨 显示")
+show_duan_zh       = input.bool(true,  "显示段中枢",         group="🎨 显示")
+show_bi_zh_axis    = input.bool(true,  "显示笔中枢中轴",     group="🎨 显示")
+show_duan_zh_axis  = input.bool(true,  "显示段中枢中轴",     group="🎨 显示")
+show_high_zh       = input.bool(true,  "显示大级别中枢",     group="🎨 显示")
+show_amplitude     = input.bool(true,  "显示笔/段振幅",      group="🎨 显示")
+show_structure     = input.bool(true,  "显示走势结构标识",   group="🎨 显示")
+show_bs_points     = input.bool(true,  "显示买卖点",         group="🎨 显示")
+show_beichi        = input.bool(true,  "显示背驰标记",       group="🎨 显示")
+show_fractals      = input.bool(true,  "显示分型标记",       group="🎨 显示")
+max_bi_draw        = input.int(30,     "最大显示笔数",       minval=5, maxval=60, group="🎨 显示")
+max_zh_draw        = input.int(6,      "最大显示中枢数",     minval=2, maxval=15, group="🎨 显示")
+zh_extend_right    = input.int(8,      "中枢向右延伸K线",    minval=0, maxval=30, group="🎨 显示")
+
+c_bi               = input.color(#00BFFF, "笔颜色",                  group="🎨 颜色")
+c_duan_zh          = input.color(#DAA520, "线段和笔中枢颜色",         group="🎨 颜色")
+c_high             = input.color(#FF00FF, "大级别走势段和段中枢颜色", group="🎨 颜色")
+bi_width           = input.int(1, "笔的粗细",             minval=1, maxval=5, group="🎨 颜色")
+bi_zh_width        = input.int(1, "笔中枢的粗细",         minval=1, maxval=5, group="🎨 颜色")
+duan_width         = input.int(2, "段的粗细",             minval=1, maxval=5, group="🎨 颜色")
+duan_zh_width      = input.int(1, "段中枢的粗细",         minval=1, maxval=5, group="🎨 颜色")
+high_width         = input.int(2, "大级别和段中枢的粗细", minval=1, maxval=5, group="🎨 颜色")
+
+show_ema           = input.bool(true, "显示EMA", group="📉 辅助指标")
+ema_s              = input.int(20,  "EMA短期",  group="📉 辅助指标")
+ema_l              = input.int(60,  "EMA长期",  group="📉 辅助指标")
+fastlen            = input.int(12, "MACD快线", group="📉 辅助指标")
+slowlen            = input.int(26, "MACD慢线", group="📉 辅助指标")
+siglen             = input.int(9,  "MACD信号", group="📉 辅助指标")
+
+show_entry         = input.bool(true,  "显示入场触发线",   group="🎯 入场信号")
+entry_window       = input.int(10,     "信号有效K线数",    minval=3, maxval=30, group="🎯 入场信号")
+atr_sl_mult        = input.float(2.0,  "止损ATR倍数",      minval=0.5, maxval=5.0,  group="🎯 入场信号")
+atr_tp_mult        = input.float(3.0,  "止盈ATR倍数",      minval=1.0, maxval=10.0, group="🎯 入场信号")
+min_rr             = input.float(1.5,  "最小盈亏比",       minval=1.0, maxval=5.0,  group="🎯 入场信号")
+conservative_1b    = input.bool(true,  "一买一卖保守2K确认",group="🎯 入场信号")
+min_bc_class_1b    = input.int(5,  "一买/卖最低背驰等级(3-15)", minval=3, maxval=15, group="🎯 入场信号")
+// FIX-LABEL-CROWD: 同一位置最小间隔笔数
+bs_label_min_gap   = input.int(3, "买卖点标签最小间距(笔数)", minval=1, maxval=10, group="🎯 入场信号")
+
+show_mtf           = input.bool(true, "启用MTF趋势", group="🌐 MTF")
+mtf_ema_len        = input.int(20, "MTF EMA长度", group="🌐 MTF")
+tf1                = input.timeframe("60",  "TF1", group="🌐 MTF")
+tf2                = input.timeframe("120", "TF2", group="🌐 MTF")
+tf3                = input.timeframe("240", "TF3", group="🌐 MTF")
+tf4                = input.timeframe("720", "TF4", group="🌐 MTF")
+tf5                = input.timeframe("D",   "TF5", group="🌐 MTF")
+mtf_threshold      = input.float(0.5, "MTF阈值", minval=0, maxval=1, step=0.1, group="🌐 MTF")
+
+visible_bars       = input.int(300,  "可见K线范围",       minval=50, maxval=1000, group="⚙️ 性能")
+bi_zh_max_ext      = input.int(60,   "笔中枢最大延伸K线", minval=20, maxval=200,  group="⚙️ 性能")
+duan_zh_max_ext    = input.int(120,  "段中枢最大延伸K线", minval=40, maxval=400,  group="⚙️ 性能")
+macd_buf           = input.int(1000, "MACD历史缓冲区",    minval=200, maxval=1499, group="⚙️ 性能")
+bc_expire_bis      = input.int(6,    "背驰信号最大有效笔数", minval=2, maxval=20, group="⚙️ 性能")
+
+// ════════════════════════════════════════════════════════════
+// ██  数据结构
+// ════════════════════════════════════════════════════════════
+
+type Fenxing
+    int   idx
+    float price
+    bool  is_top
+    bool  confirmed
+    bool  is_new
+
+type Bi
+    int   s_idx
+    float s_price
+    int   e_idx
+    float e_price
+    bool  is_up
+    float amp
+    int   num
+    float macd_area
+
+type Zhongshu
+    int   s_idx
+    int   e_idx
+    float zg
+    float zd
+    float zz
+    int   bi_cnt
+    bool  validated
+    int   level
+
+type Duan
+    int    s_idx
+    float  s_price
+    int    e_idx
+    float  e_price
+    bool   is_up
+    float  amp
+    int    num
+    int    bi_cnt
+    float  macd_area
+    int    level
+    string structure
+
+// FIX-LABEL-Y: 新增 disp_price 字段存储笔端点实际价格用于标签定位
+// 原 price 字段存储 bs_trig（ZD/ZG边界价），导致二买/三买等标签Y轴错位
+type BSPoint
+    int    idx
+    float  price        // bs_trig：信号参考价（ZD/ZG）
+    float  disp_price   // 笔端点实际价格，用于图表标签Y轴定位（FIX-LABEL-Y）
+    int    pt_type
+    bool   is_class2
+    float  trigger
+    float  sl
+    float  tp
+    float  rr
+    string status
+    int    confirm_cnt
+    bool   confirmed
+    int    confirm_bar
+    float  amp
+
+var array<Fenxing>  fxs        = array.new<Fenxing>()
+var array<Bi>       bis        = array.new<Bi>()
+var array<Duan>     duans      = array.new<Duan>()
+var array<Duan>     high_duans = array.new<Duan>()
+var array<Zhongshu> bi_zhs     = array.new<Zhongshu>()
+var array<Zhongshu> duan_zhs   = array.new<Zhongshu>()
+var array<Zhongshu> high_zhs   = array.new<Zhongshu>()
+var array<BSPoint>  bs_points  = array.new<BSPoint>()
+
+// FIX-FX-ORPHAN: 存储有效笔端点bar_index集合，供分型过滤使用
+var array<int> bi_ep_idxs = array.new<int>()
+
+// ════════════════════════════════════════════════════════════
+// ██  状态变量
+// ════════════════════════════════════════════════════════════
+
+var int   active_bi_dir   = init_dir
+var int   active_bi_s_idx = na
+var float active_bi_s_prc = na
+var int   active_bi_e_idx = na
+var float active_bi_e_prc = na
+var bool  bi_started      = false
+var int   bi_cnt          = 0
+var int   duan_cnt        = 0
+var int   hduan_cnt       = 0
+var int   prev_bi_cnt     = 0
+
+var float inc_h   = na
+var float inc_l   = na
+var int   inc_dir = init_dir
+var float detect_h = na
+var float detect_l = na
+
+var int  last_sell3_zh_sidx   = -1
+var int  last_buy3_zh_sidx    = -1
+var int  last_buy1_zh_sidx    = -1
+var int  last_sell1_zh_sidx   = -1
+var int  last_buy2_zh_sidx    = -1
+var int  last_sell2_zh_sidx   = -1
+var int  last_buy2c_zh_sidx   = -1
+var int  last_sell2c_zh_sidx  = -1
+var int  last_signal_bi_e_idx = 0
+var int  last_buy1_bi_num     = -999
+var int  last_sell1_bi_num    = -999
+var float buy1_lock_zg        = na
+var float sell1_lock_zd       = na
+var bool price_left_zh_for_buy1  = true
+var bool price_left_zh_for_sell1 = true
+var int  last_buy2_bi_num  = -999
+var int  last_sell2_bi_num = -999
+var int  last_buy3_bi_num  = -999
+var int  last_sell3_bi_num = -999
+var int  last_buy2c_bi_num = -999
+var int  last_sell2c_bi_num = -999
+var int  last_bs_bi_num    = 0
+
+var int  cur_bc_class      = 0
+var bool top_bc            = false
+var bool bot_bc            = false
+var int  bc_detect_bi_cnt  = 0
+var bool bc_detect_bi_up   = false
+
+// ════════════════════════════════════════════════════════════
+// ██  辅助函数
+// ════════════════════════════════════════════════════════════
+
+in_range(int idx) => bar_index - idx <= visible_bars
+
+get_last(arr, int off = 0) =>
+    sz = array.size(arr)
+    sz > off ? array.get(arr, sz - 1 - off) : na
+
+fmt(float v, int dec = 3) =>
+    str.tostring(math.round(v, dec))
+
+bi_hl(Bi b) => [math.max(b.s_price, b.e_price), math.min(b.s_price, b.e_price)]
+
+price_overlaps(float zg1, float zd1, float zg2, float zd2) =>
+    not (zg1 < zd2 or zg2 < zd1)
+
+// ════════════════════════════════════════════════════════════
+// ██  基础指标
+// ════════════════════════════════════════════════════════════
+
+atr_val = ta.atr(14)
+[ml, sl2, hist] = ta.macd(close, fastlen, slowlen, siglen)
+max_bars_back(hist, 1499)
+
+ema_short = ta.ema(close, ema_s)
+ema_long  = ta.ema(close, ema_l)
+rsi_v     = ta.rsi(close, 14)
+
+calc_macd_area(int from_bar, int to_bar) =>
+    float area = 0.0
+    bool valid = not na(from_bar) and not na(to_bar) and from_bar >= 0 and to_bar >= from_bar and bar_index >= 1
+    if valid
+        int off_start = bar_index - to_bar
+        int off_end   = bar_index - from_bar
+        int hard_cap  = math.min(macd_buf - 1, bar_index - 1)
+        int s = math.max(0, off_start)
+        int e = math.min(off_end, hard_cap)
+        if s >= 0 and e >= s and e <= hard_cap
+            for i = s to e
+                area += math.abs(hist[i])
+    area
+
+mtf_src  = (high[1] + low[1]) / 2
+mtf_ema  = ta.ema(mtf_src, mtf_ema_len)
+mtf_conf = mtf_src > mtf_ema
+tp1 = request.security("", tf1, mtf_conf, lookahead=barmerge.lookahead_off)
+tp2 = request.security("", tf2, mtf_conf, lookahead=barmerge.lookahead_off)
+tp3 = request.security("", tf3, mtf_conf, lookahead=barmerge.lookahead_off)
+tp4 = request.security("", tf4, mtf_conf, lookahead=barmerge.lookahead_off)
+tp5 = request.security("", tf5, mtf_conf, lookahead=barmerge.lookahead_off)
+mtf_avg     = math.avg(tp1 ? 1 : 0, tp2 ? 1 : 0, tp3 ? 1 : 0, tp4 ? 1 : 0, tp5 ? 1 : 0)
+mtf_bullish = mtf_avg > mtf_threshold
+mtf_bearish = mtf_avg < (1 - mtf_threshold)
+
+// ════════════════════════════════════════════════════════════
+// ██  包含关系处理
+// ════════════════════════════════════════════════════════════
+
+if barstate.isconfirmed
+    float ph = high
+    float pl = low
+    int   pd = inc_dir
+    bool  inc_happen = false
+
+    if inclusion_mode == 1 and not na(inc_h)
+        bool is_inc = (high <= inc_h and low >= inc_l) or (high >= inc_h and low <= inc_l)
+        if is_inc
+            inc_happen := true
+            if inc_dir >= 0
+                if inc_take_max == 1
+                    ph := math.max(inc_h, high)
+                    pl := math.max(inc_l, low)
+                else
+                    bool take_cur = (inc_equal_high == 1) ? (high >= inc_h) : (high > inc_h)
+                    ph := take_cur ? high : inc_h
+                    pl := take_cur ? low  : inc_l
+            else
+                if inc_take_max == 1
+                    ph := math.min(inc_h, high)
+                    pl := math.min(inc_l, low)
+                else
+                    bool take_cur_d = (inc_equal_high == 1) ? (high <= inc_h) : (high < inc_h)
+                    ph := take_cur_d ? high : inc_h
+                    pl := take_cur_d ? low  : inc_l
+        else
+            if high > inc_h and low > inc_l
+                pd := 1
+            else if high < inc_h and low < inc_l
+                pd := -1
+            ph := high
+            pl := low
+    else if not (inclusion_mode == 1)
+        ph := high
+        pl  := low
+
+    inc_h   := ph
+    inc_l   := pl
+    inc_dir := pd
+
+    if inc_happen
+        detect_h := nz(detect_h[1], high) - syminfo.mintick
+        detect_l := nz(detect_l[1], low)  + syminfo.mintick
+    else
+        detect_h := ph
+        detect_l := pl
+
+// ════════════════════════════════════════════════════════════
+// ██  分型识别
+// ════════════════════════════════════════════════════════════
+
+if barstate.isconfirmed
+    ph_v = ta.pivothigh(detect_h, fx_confirm_bars, fx_confirm_bars)
+    if not na(ph_v)
+        fi     = bar_index[fx_confirm_bars]
+        fx_prc = detect_h[fx_confirm_bars]
+        dup = false
+        sz  = array.size(fxs)
+        if sz > 0
+            for k = 0 to math.min(3, sz - 1)
+                f = get_last(fxs, k)
+                if not na(f) and f.is_top and math.abs(fi - f.idx) <= fx_confirm_bars * 2
+                    if fx_prc <= f.price + atr_val * 0.1
+                        dup := true
+                        break
+        if not dup
+            if sz > 0
+                for k = 0 to math.min(2, sz - 1)
+                    old = array.get(fxs, sz - 1 - k)
+                    if not na(old)
+                        old.is_new := false
+                        array.set(fxs, sz - 1 - k, old)
+            array.push(fxs, Fenxing.new(fi, fx_prc, true, true, true))
+            if array.size(fxs) > 100
+                array.shift(fxs)
+
+    pl_v = ta.pivotlow(detect_l, fx_confirm_bars, fx_confirm_bars)
+    if not na(pl_v)
+        fi     = bar_index[fx_confirm_bars]
+        fx_prc = detect_l[fx_confirm_bars]
+        dup = false
+        sz  = array.size(fxs)
+        if sz > 0
+            for k = 0 to math.min(3, sz - 1)
+                f = get_last(fxs, k)
+                if not na(f) and not f.is_top and math.abs(fi - f.idx) <= fx_confirm_bars * 2
+                    if fx_prc >= f.price - atr_val * 0.1
+                        dup := true
+                        break
+        if not dup
+            if sz > 0
+                for k = 0 to math.min(2, sz - 1)
+                    old = array.get(fxs, sz - 1 - k)
+                    if not na(old)
+                        old.is_new := false
+                        array.set(fxs, sz - 1 - k, old)
+            array.push(fxs, Fenxing.new(fi, fx_prc, false, true, true))
+            if array.size(fxs) > 100
+                array.shift(fxs)
+
+if barstate.isconfirmed and array.size(fxs) >= 2
+    for _iter = 0 to 9
+        fsz_v = array.size(fxs)
+        if fsz_v >= 2
+            f1 = array.get(fxs, fsz_v - 2)
+            f2 = array.get(fxs, fsz_v - 1)
+            if not na(f1) and not na(f2) and f1.is_top == f2.is_top
+                if f1.is_top
+                    if f2.price >= f1.price
+                        array.remove(fxs, fsz_v - 2)
+                    else
+                        array.remove(fxs, fsz_v - 1)
+                else
+                    if f2.price <= f1.price
+                        array.remove(fxs, fsz_v - 2)
+                    else
+                        array.remove(fxs, fsz_v - 1)
+
+// ════════════════════════════════════════════════════════════
+// ██  笔识别
+// ════════════════════════════════════════════════════════════
+
+if barstate.isconfirmed and array.size(fxs) > 0
+    lf = get_last(fxs, 0)
+    if not na(lf) and lf.confirmed
+        ct = lf.is_top ? 1 : -1
+        if not bi_started
+            active_bi_dir   := ct == 1 ? -1 : 1
+            active_bi_s_idx := lf.idx
+            active_bi_s_prc := lf.price
+            active_bi_e_idx := lf.idx
+            active_bi_e_prc := lf.price
+            bi_started      := true
+        else
+            bar_span = math.abs(lf.idx - active_bi_s_idx)
+            if active_bi_dir == 1
+                if ct == 1
+                    if lf.price >= active_bi_e_prc
+                        if bar_span >= bi_min_k
+                            bi_cnt += 1
+                            _ma = calc_macd_area(active_bi_s_idx, lf.idx)
+                            array.push(bis, Bi.new(active_bi_s_idx, active_bi_s_prc, lf.idx, lf.price, true, lf.price - active_bi_s_prc, bi_cnt, _ma))
+                            if array.size(bis) > 80
+                                array.shift(bis)
+                            active_bi_dir   := -1
+                            active_bi_s_idx := lf.idx
+                            active_bi_s_prc := lf.price
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                        else
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                else
+                    if lf.price < active_bi_s_prc
+                        if not na(active_bi_e_prc) and active_bi_e_prc > active_bi_s_prc and bar_span >= bi_min_k
+                            bi_cnt += 1
+                            _ma = calc_macd_area(active_bi_s_idx, active_bi_e_idx)
+                            array.push(bis, Bi.new(active_bi_s_idx, active_bi_s_prc, active_bi_e_idx, active_bi_e_prc, true, active_bi_e_prc - active_bi_s_prc, bi_cnt, _ma))
+                            if array.size(bis) > 80
+                                array.shift(bis)
+                            active_bi_dir   := -1
+                            active_bi_s_idx := active_bi_e_idx
+                            active_bi_s_prc := active_bi_e_prc
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                        else
+                            active_bi_dir := -1
+                            bsz_tmp = array.size(bis)
+                            if bsz_tmp > 0
+                                last_b = array.get(bis, bsz_tmp - 1)
+                                if not na(last_b)
+                                    active_bi_s_idx := last_b.e_idx
+                                    active_bi_s_prc := last_b.e_price
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+            else
+                if ct == -1
+                    if lf.price <= active_bi_e_prc
+                        if bar_span >= bi_min_k
+                            bi_cnt += 1
+                            _ma = calc_macd_area(active_bi_s_idx, lf.idx)
+                            array.push(bis, Bi.new(active_bi_s_idx, active_bi_s_prc, lf.idx, lf.price, false, lf.price - active_bi_s_prc, bi_cnt, _ma))
+                            if array.size(bis) > 80
+                                array.shift(bis)
+                            active_bi_dir   := 1
+                            active_bi_s_idx := lf.idx
+                            active_bi_s_prc := lf.price
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                        else
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                else
+                    if lf.price > active_bi_s_prc
+                        if not na(active_bi_e_prc) and active_bi_e_prc < active_bi_s_prc and bar_span >= bi_min_k
+                            bi_cnt += 1
+                            _ma = calc_macd_area(active_bi_s_idx, active_bi_e_idx)
+                            array.push(bis, Bi.new(active_bi_s_idx, active_bi_s_prc, active_bi_e_idx, active_bi_e_prc, false, active_bi_e_prc - active_bi_s_prc, bi_cnt, _ma))
+                            if array.size(bis) > 80
+                                array.shift(bis)
+                            active_bi_dir   := 1
+                            active_bi_s_idx := active_bi_e_idx
+                            active_bi_s_prc := active_bi_e_prc
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+                        else
+                            active_bi_dir := 1
+                            bsz_tmp = array.size(bis)
+                            if bsz_tmp > 0
+                                last_b = array.get(bis, bsz_tmp - 1)
+                                if not na(last_b)
+                                    active_bi_s_idx := last_b.e_idx
+                                    active_bi_s_prc := last_b.e_price
+                            active_bi_e_idx := lf.idx
+                            active_bi_e_prc := lf.price
+
+// ════════════════════════════════════════════════════════════
+// ██  笔中枢识别
+// ════════════════════════════════════════════════════════════
+
+bool bi_changed = barstate.isconfirmed and bi_cnt != prev_bi_cnt
+
+if bi_changed and array.size(bis) >= 3
+    cn = math.min(9, array.size(bis))
+    for i = 0 to cn - 3
+        b0 = get_last(bis, i)
+        b1 = get_last(bis, i + 1)
+        b2 = get_last(bis, i + 2)
+        if not na(b0) and not na(b1) and not na(b2)
+            [h0, l0] = bi_hl(b0)
+            [h1, l1] = bi_hl(b1)
+            [h2, l2] = bi_hl(b2)
+            zg = math.min(h0, math.min(h1, h2))
+            zd = math.max(l0, math.max(l1, l2))
+            if zg > zd and (zg - zd) >= atr_val * 0.3
+                si = b2.s_idx
+                ei = b0.e_idx
+                dup = false
+                zsz = math.min(array.size(bi_zhs), 5)
+                if zsz > 0
+                    for j = 0 to zsz - 1
+                        ex = get_last(bi_zhs, j)
+                        if not na(ex)
+                            bool pov   = price_overlaps(zg, zd, ex.zg, ex.zd)
+                            bool tnear = math.abs(si - ex.s_idx) < bi_zh_max_ext
+                            if pov and tnear
+                                if (zg - zd) > (ex.zg - ex.zd)
+                                    array.remove(bi_zhs, array.size(bi_zhs) - 1 - j)
+                                else
+                                    dup := true
+                                break
+                if not dup
+                    if array.size(bis) > i + 3
+                        b3 = get_last(bis, i + 3)
+                        if not na(b3)
+                            [h3, l3] = bi_hl(b3)
+                            if not (l3 > zg or h3 < zd)
+                                array.push(bi_zhs, Zhongshu.new(si, ei, zg, zd, (zg + zd) / 2, 4, true, 1))
+                                if array.size(bi_zhs) > 20
+                                    array.shift(bi_zhs)
+                                break
+
+if barstate.isconfirmed and array.size(bi_zhs) > 0 and array.size(bis) > 0
+    lzh_ext = get_last(bi_zhs, 0)
+    lbi_ext = get_last(bis, 0)
+    if not na(lzh_ext) and not na(lbi_ext)
+        float cur_ep = lbi_ext.e_price
+        // FIX-ZH-EXT-TIGHT: 缓冲区从 0.2 收紧至 0.05，防止中枢无限膨胀
+        float buf    = atr_val * 0.05
+        bool  ep_in  = cur_ep >= lzh_ext.zd - buf and cur_ep <= lzh_ext.zg + buf
+        bool  not_wide = (lbi_ext.e_idx - lzh_ext.s_idx) <= bi_zh_max_ext
+        if ep_in and lbi_ext.e_idx > lzh_ext.e_idx and not_wide
+            lzh_ext.e_idx  := lbi_ext.e_idx
+            lzh_ext.bi_cnt := lzh_ext.bi_cnt + 1
+            array.set(bi_zhs, array.size(bi_zhs) - 1, lzh_ext)
+
+// ════════════════════════════════════════════════════════════
+// ██  段识别（FIX-STRUCT：结构标签改为同向段比较）
+// ════════════════════════════════════════════════════════════
+
+var int   active_seg_s_idx = na
+var float active_seg_s_prc = na
+var bool  active_seg_is_up = true
+var bool  active_seg_valid = false
+
+if enable_duan and bi_changed and array.size(bis) >= 3
+    bsz = array.size(bis)
+    b_last = array.get(bis, bsz - 1)
+    if not na(b_last)
+        seg_dir = b_last.is_up
+        int search_start = 0
+        prev_e_idx = -1
+        prev_e_prc = float(na)
+        dsz_pre = array.size(duans)
+        if dsz_pre > 0
+            ld_pre = array.get(duans, dsz_pre - 1)
+            if not na(ld_pre)
+                prev_e_idx := ld_pre.e_idx
+                prev_e_prc := ld_pre.e_price
+                for bi_k = 0 to bsz - 1
+                    bk_s = array.get(bis, bi_k)
+                    if not na(bk_s) and bk_s.s_idx >= ld_pre.e_idx - 1
+                        search_start := bi_k
+                        break
+
+        var array<int> same_idxs_d = array.new<int>()
+        array.clear(same_idxs_d)
+        for k = 0 to bsz - 1
+            pos = bsz - 1 - k
+            if pos < search_start
+                break
+            bk = array.get(bis, pos)
+            if not na(bk) and bk.is_up == seg_dir
+                array.push(same_idxs_d, pos)
+
+        if array.size(same_idxs_d) < 2
+            array.clear(same_idxs_d)
+            int fb_cnt = 0
+            for k = 0 to bsz - 1
+                int fpos = bsz - 1 - k
+                if fpos < search_start
+                    break
+                bk_fb = array.get(bis, fpos)
+                if not na(bk_fb) and bk_fb.is_up == seg_dir
+                    array.push(same_idxs_d, fpos)
+                    fb_cnt += 1
+                    if fb_cnt >= 20
+                        break
+
+        int same_cnt_d = array.size(same_idxs_d)
+        float last_ep_d = b_last.e_price
+        bool seg_formed = false
+        if same_cnt_d >= 2
+            pos_new_d = array.get(same_idxs_d, 0)
+            for k = 1 to same_cnt_d - 1
+                prev_pos_d = array.get(same_idxs_d, k)
+                bprev_d    = array.get(bis, prev_pos_d)
+                if not na(bprev_d)
+                    bool broken_d = (seg_dir and last_ep_d > bprev_d.e_price) or (not seg_dir and last_ep_d < bprev_d.e_price)
+                    bool gap_ok   = (pos_new_d - prev_pos_d) >= 2
+                    if broken_d and gap_ok
+                        seg_formed := true
+                        break
+
+        if seg_formed
+            int   seg_s_idx = -1
+            float seg_s_prc = na
+            if prev_e_idx >= 0
+                seg_s_idx := prev_e_idx
+                seg_s_prc := prev_e_prc
+            else
+                ep_first = array.get(same_idxs_d, same_cnt_d - 1)
+                eb_first = array.get(bis, ep_first)
+                if not na(eb_first)
+                    seg_s_idx := eb_first.s_idx
+                    seg_s_prc := eb_first.s_price
+
+            if seg_s_idx >= 0 and not na(seg_s_prc)
+                int   seg_e_idx = b_last.e_idx
+                float seg_e_prc = b_last.e_price
+                // FIX-DUAN-PRICE: 遍历段内所有笔，取实际极值作为段起终点价格
+                int first_bi_pos = array.get(same_idxs_d, same_cnt_d - 1)
+                int last_bi_pos  = array.get(same_idxs_d, 0)
+                for _dp = first_bi_pos to last_bi_pos
+                    _db = array.get(bis, _dp)
+                    if not na(_db)
+                        if seg_dir
+                            // 上升段：起点取最低，终点取最高
+                            if _db.s_price < seg_s_prc or _db.e_price < seg_s_prc
+                                float _dmin = math.min(_db.s_price, _db.e_price)
+                                if _dmin < seg_s_prc
+                                    seg_s_prc := _dmin
+                                    seg_s_idx := _db.s_price < _db.e_price ? _db.s_idx : _db.e_idx
+                            if _db.e_price > seg_e_prc
+                                seg_e_prc := _db.e_price
+                                seg_e_idx := _db.e_idx
+                        else
+                            // 下降段：起点取最高，终点取最低
+                            if _db.s_price > seg_s_prc or _db.e_price > seg_s_prc
+                                float _dmax = math.max(_db.s_price, _db.e_price)
+                                if _dmax > seg_s_prc
+                                    seg_s_prc := _dmax
+                                    seg_s_idx := _db.s_price > _db.e_price ? _db.s_idx : _db.e_idx
+                            if _db.e_price < seg_e_prc
+                                seg_e_prc := _db.e_price
+                                seg_e_idx := _db.e_idx
+                float seg_amp   = seg_e_prc - seg_s_prc
+                seg_bc_d = array.get(same_idxs_d, 0) - array.get(same_idxs_d, same_cnt_d - 1) + 1
+                float m_area_d = calc_macd_area(seg_s_idx, seg_e_idx)
+                bool dup_d = false
+                int  dsz_d = array.size(duans)
+                if dsz_d > 0
+                    ld_d = array.get(duans, dsz_d - 1)
+                    if not na(ld_d) and ld_d.is_up == seg_dir
+                        bool ep_better = (seg_dir and seg_e_prc > ld_d.e_price) or (not seg_dir and seg_e_prc < ld_d.e_price)
+                        bool same_end  = math.abs(ld_d.e_idx - seg_e_idx) <= 1
+                        if same_end
+                            dup_d := true
+                        else if ep_better
+                            ld_d.e_idx   := seg_e_idx
+                            ld_d.e_price := seg_e_prc
+                            ld_d.amp     := seg_amp
+                            ld_d.bi_cnt  := seg_bc_d
+                            array.set(duans, dsz_d - 1, ld_d)
+                            dup_d := true
+                if not dup_d
+                    // FIX-STRUCT: 与同向历史段比较，而非前一段（可能是反向段）
+                    string struct_s = seg_dir ? "上升" : "下降"
+                    int dsz_struct = array.size(duans)
+                    if dsz_struct > 0
+                        Duan prev_same_dir_d = na
+                        for _si = 0 to dsz_struct - 1
+                            _d = array.get(duans, dsz_struct - 1 - _si)
+                            if not na(_d) and _d.is_up == seg_dir
+                                prev_same_dir_d := _d
+                                break
+                        if not na(prev_same_dir_d)
+                            // FIX-STRUCT-AMP: 增加幅度比例容错，幅度≥前段70%也标为趋势型
+                            float prev_amp = math.abs(prev_same_dir_d.amp)
+                            float cur_amp_abs = math.abs(seg_amp)
+                            bool amp_significant = prev_amp > 0 and cur_amp_abs >= prev_amp * 0.7
+                            if seg_dir
+                                struct_s := (seg_e_prc > prev_same_dir_d.e_price or amp_significant) ? "上升" : "盘整"
+                            else
+                                struct_s := (seg_e_prc < prev_same_dir_d.e_price or amp_significant) ? "下降" : "盘整"
+                    duan_cnt += 1
+                    array.push(duans, Duan.new(seg_s_idx, seg_s_prc, seg_e_idx, seg_e_prc, seg_dir, seg_amp, duan_cnt, seg_bc_d, m_area_d, 1, struct_s))
+                    if array.size(duans) > 40
+                        array.shift(duans)
+                active_seg_s_idx := seg_s_idx
+                active_seg_s_prc := seg_s_prc
+                active_seg_is_up := seg_dir
+                active_seg_valid := true
+        else
+            if not na(b_last)
+                bool dir_changed_d = na(active_seg_s_idx) or (active_seg_is_up != seg_dir)
+                if dir_changed_d
+                    if prev_e_idx >= 0
+                        active_seg_s_idx := prev_e_idx
+                        active_seg_s_prc := prev_e_prc
+                    else if same_cnt_d >= 1
+                        ep_d = array.get(same_idxs_d, same_cnt_d - 1)
+                        eb_d = array.get(bis, ep_d)
+                        if not na(eb_d)
+                            active_seg_s_idx := eb_d.s_idx
+                            active_seg_s_prc := eb_d.s_price
+                    active_seg_is_up := seg_dir
+                active_seg_valid := true
+
+// ════════════════════════════════════════════════════════════
+// ██  大级别段识别（FIX-HDUAN-DEDUP + FIX-STRUCT）
+// ════════════════════════════════════════════════════════════
+
+if enable_high_duan and bi_changed and array.size(duans) >= 3
+    dsz_h  = array.size(duans)
+    d_last = array.get(duans, dsz_h - 1)
+    if not na(d_last)
+        hdir = d_last.is_up
+        var array<int> hduan_idxs = array.new<int>()
+        array.clear(hduan_idxs)
+        for k = 0 to dsz_h - 1
+            dk = array.get(duans, dsz_h - 1 - k)
+            if not na(dk)
+                if dk.is_up == hdir
+                    array.push(hduan_idxs, dsz_h - 1 - k)
+                else
+                    break
+        int hcnt = array.size(hduan_idxs)
+        if hcnt >= 2
+            float total_amp = 0.0
+            for k = 0 to hcnt - 1
+                dk = array.get(duans, array.get(hduan_idxs, k))
+                if not na(dk)
+                    total_amp += math.abs(dk.amp)
+            float avg_amp = total_amp / hcnt
+            first_d = array.get(duans, array.get(hduan_idxs, hcnt - 1))
+            last_d  = array.get(duans, array.get(hduan_idxs, 0))
+            if not na(first_d) and not na(last_d)
+                hs_idx = first_d.s_idx
+                hs_prc = first_d.s_price
+                he_idx = last_d.e_idx
+                he_prc = last_d.e_price
+                h_amp  = he_prc - hs_prc
+                if hcnt >= 2 and math.abs(h_amp) >= avg_amp * 1.5
+                    m_area_h = calc_macd_area(hs_idx, he_idx)
+                    string hstruct = hdir ? "上升" : "下降"
+                    hsz_pre2 = array.size(high_duans)
+                    if hsz_pre2 > 0
+                        // FIX-STRUCT: 大级别段结构也改为同向段比较
+                        Duan prev_same_hd = na
+                        for _hsi = 0 to hsz_pre2 - 1
+                            _hd = array.get(high_duans, hsz_pre2 - 1 - _hsi)
+                            if not na(_hd) and _hd.is_up == hdir
+                                prev_same_hd := _hd
+                                break
+                        if not na(prev_same_hd)
+                            // FIX-STRUCT-AMP: 大级别段也增加幅度比例容错
+                            float _hpamp = math.abs(prev_same_hd.amp)
+                            float _hcamp = math.abs(h_amp)
+                            bool _hamp_sig = _hpamp > 0 and _hcamp >= _hpamp * 0.7
+                            hstruct := hdir ? ((he_prc > prev_same_hd.e_price or _hamp_sig) ? "上升" : "盘整") : ((he_prc < prev_same_hd.e_price or _hamp_sig) ? "下降" : "盘整")
+                    dup_h2 = false
+                    hsz2   = array.size(high_duans)
+                    if hsz2 > 0
+                        lhd = array.get(high_duans, hsz2 - 1)
+                        if not na(lhd) and lhd.is_up == hdir
+                            bool h_ep_better = hdir ? he_prc > lhd.e_price : he_prc < lhd.e_price
+                            bool h_same_end  = math.abs(lhd.e_idx - he_idx) <= 1
+                            if h_same_end
+                                dup_h2 := true
+                            else if h_ep_better
+                                lhd.e_idx   := he_idx
+                                lhd.e_price := he_prc
+                                lhd.amp     := he_prc - lhd.s_price
+                                lhd.bi_cnt  := hcnt
+                                array.set(high_duans, hsz2 - 1, lhd)
+                                dup_h2 := true
+                            else
+                                // FIX-HDUAN-DEDUP: 仅时间范围有实质重叠时才视为重复
+                                bool time_overlap_h = not (he_idx < lhd.s_idx - 5 or hs_idx > lhd.e_idx + 5)
+                                if time_overlap_h
+                                    dup_h2 := true
+                    if not dup_h2
+                        // FIX-HDUAN-PRICE: 大级别段起点保留实际极值价格，不用前段终点覆盖
+                        // NOTE: 前段终点 e_price 未必是本段起始方向的极值，覆盖会导致段线浮空
+                        int   h_s_idx = hs_idx
+                        float h_s_prc = hs_prc
+                        if hsz2 > 0
+                            prev_hd = array.get(high_duans, hsz2 - 1)
+                            if not na(prev_hd) and prev_hd.e_idx <= hs_idx
+                                // 仅更新 idx 用于时间连续性，价格保留实际极值
+                                h_s_idx := prev_hd.e_idx
+                        hduan_cnt += 1
+                        array.push(high_duans, Duan.new(h_s_idx, h_s_prc, he_idx, he_prc, hdir, he_prc - h_s_prc, hduan_cnt, hcnt, m_area_h, 2, hstruct))
+                        if array.size(high_duans) > 20
+                            array.shift(high_duans)
+
+// ════════════════════════════════════════════════════════════
+// ██  段中枢识别（FIX-DUAN-ZH：3段重叠即有效，第4段作强化确认）
+// ════════════════════════════════════════════════════════════
+
+if bi_changed and array.size(duans) >= 3
+    dsz = array.size(duans)
+    cn2 = math.min(6, dsz)
+    for i = 0 to cn2 - 3
+        d0 = get_last(duans, i)
+        d1 = get_last(duans, i + 1)
+        d2 = get_last(duans, i + 2)
+        if not na(d0) and not na(d1) and not na(d2)
+            dh0 = math.max(d0.s_price, d0.e_price)
+            dl0 = math.min(d0.s_price, d0.e_price)
+            dh1 = math.max(d1.s_price, d1.e_price)
+            dl1 = math.min(d1.s_price, d1.e_price)
+            dh2 = math.max(d2.s_price, d2.e_price)
+            dl2 = math.min(d2.s_price, d2.e_price)
+            zg2 = math.min(dh0, math.min(dh1, dh2))
+            zd2 = math.max(dl0, math.max(dl1, dl2))
+            if zg2 > zd2
+                si2 = d2.s_idx
+                ei2 = d0.e_idx
+                dup2 = false
+                zsz2 = math.min(array.size(duan_zhs), 4)
+                if zsz2 > 0
+                    for j = 0 to zsz2 - 1
+                        ex2 = get_last(duan_zhs, j)
+                        if not na(ex2)
+                            bool pov2   = price_overlaps(zg2, zd2, ex2.zg, ex2.zd)
+                            bool tnear2 = math.abs(si2 - ex2.s_idx) < duan_zh_max_ext
+                            if pov2 and tnear2
+                                if (zg2 - zd2) > (ex2.zg - ex2.zd)
+                                    array.remove(duan_zhs, array.size(duan_zhs) - 1 - j)
+                                else
+                                    dup2 := true
+                                break
+                if not dup2
+                    // FIX-DUAN-ZH: 三段重叠即满足缠论中枢定义，无需强制第4段
+                    bool duan_zh_validated = true
+                    int  duan_zh_cnt = 3
+                    if dsz > i + 3
+                        d3_check = get_last(duans, i + 3)
+                        if not na(d3_check)
+                            dh3 = math.max(d3_check.s_price, d3_check.e_price)
+                            dl3 = math.min(d3_check.s_price, d3_check.e_price)
+                            if not (dl3 > zg2 or dh3 < zd2)
+                                duan_zh_cnt := 4
+                    if duan_zh_validated
+                        array.push(duan_zhs, Zhongshu.new(si2, ei2, zg2, zd2, (zg2 + zd2) / 2, duan_zh_cnt, duan_zh_cnt >= 4, 2))
+                        if array.size(duan_zhs) > 10
+                            array.shift(duan_zhs)
+                        break
+
+if barstate.isconfirmed and array.size(duan_zhs) > 0 and array.size(duans) > 0
+    ldzh_ext = get_last(duan_zhs, 0)
+    ld_ext   = get_last(duans, 0)
+    if not na(ldzh_ext) and not na(ld_ext)
+        float dep = ld_ext.e_price
+        float dbuf = atr_val * 0.3
+        bool  dep_in   = dep >= ldzh_ext.zd - dbuf and dep <= ldzh_ext.zg + dbuf
+        bool  not_wide = (ld_ext.e_idx - ldzh_ext.s_idx) <= duan_zh_max_ext
+        if dep_in and ld_ext.e_idx > ldzh_ext.e_idx and not_wide
+            ldzh_ext.e_idx  := ld_ext.e_idx
+            ldzh_ext.bi_cnt := ldzh_ext.bi_cnt + 1
+            array.set(duan_zhs, array.size(duan_zhs) - 1, ldzh_ext)
+
+// ════════════════════════════════════════════════════════════
+// ██  大级别中枢识别
+// ════════════════════════════════════════════════════════════
+
+if enable_high_duan and bi_changed and array.size(duan_zhs) >= 2
+    dzsz_all = array.size(duan_zhs)
+    float run_zg  = float(na)
+    float run_zd  = float(na)
+    int   run_s   = int(na)
+    int   run_e   = int(na)
+    int   run_cnt = 0
+
+    for k = 0 to math.min(dzsz_all - 1, 4)
+        zh_k = array.get(duan_zhs, dzsz_all - 1 - k)
+        if not na(zh_k)
+            if run_cnt == 0
+                run_zg  := zh_k.zg
+                run_zd  := zh_k.zd
+                run_s   := zh_k.s_idx
+                run_e   := zh_k.e_idx
+                run_cnt := 1
+            else
+                float new_zg = math.min(run_zg, zh_k.zg)
+                float new_zd = math.max(run_zd, zh_k.zd)
+                if new_zg > new_zd
+                    run_zg  := new_zg
+                    run_zd  := new_zd
+                    run_e   := math.max(run_e, zh_k.e_idx)
+                    run_cnt := run_cnt + 1
+                else
+                    break
+
+    bool hzh_valid = run_cnt >= 2 and not na(run_zg) and run_zg > run_zd and (run_zg - run_zd) >= atr_val * 1.0
+    if hzh_valid
+        hsz_new = array.size(high_zhs)
+        bool updated = false
+        if hsz_new > 0
+            lhz_new = array.get(high_zhs, hsz_new - 1)
+            if not na(lhz_new) and math.abs(lhz_new.s_idx - run_s) <= 10
+                lhz_new.s_idx  := run_s
+                lhz_new.e_idx  := run_e
+                lhz_new.zg     := run_zg
+                lhz_new.zd     := run_zd
+                lhz_new.zz     := (run_zg + run_zd) / 2
+                lhz_new.bi_cnt := run_cnt
+                array.set(high_zhs, hsz_new - 1, lhz_new)
+                updated := true
+        if not updated
+            array.push(high_zhs, Zhongshu.new(run_s, run_e, run_zg, run_zd, (run_zg + run_zd) / 2, run_cnt, true, 3))
+            if array.size(high_zhs) > 5
+                array.shift(high_zhs)
+
+// ════════════════════════════════════════════════════════════
+// ██  背驰检测
+// ════════════════════════════════════════════════════════════
+
+detect_bc_full() =>
+    int    bc_c   = 0
+    bool   is_top = false
+    bool   is_bot = false
+    bsz_d = array.size(bis)
+    dsz_d = array.size(duans)
+    float min_bc_area = atr_val * 0.005
+    bool bi_trend_top = false
+    bool bi_trend_bot = false
+    bool bi_zhzh_top  = false
+    bool bi_zhzh_bot  = false
+    bool bi_zh_top    = false
+    bool bi_zh_bot    = false
+    if bsz_d >= 4
+        b0 = get_last(bis, 0)
+        b2 = get_last(bis, 2)
+        b3 = get_last(bis, 3)
+        if not na(b0) and not na(b2) and not na(b3)
+            if b0.is_up and b2.is_up
+                bool b2v = b2.macd_area > min_bc_area
+                if b2v
+                    if b0.e_price > b2.e_price and b0.macd_area < b2.macd_area * 0.9
+                        bi_trend_top := true
+                    if b0.e_price <= b2.e_price * 1.002 and b0.macd_area < b2.macd_area * 0.75
+                        bi_zhzh_top := true
+            if not b0.is_up and not b2.is_up
+                bool b2v = b2.macd_area > min_bc_area
+                if b2v
+                    if b0.e_price < b2.e_price and b0.macd_area < b2.macd_area * 0.9
+                        bi_trend_bot := true
+                    if b0.e_price >= b2.e_price * 0.998 and b0.macd_area < b2.macd_area * 0.75
+                        bi_zhzh_bot := true
+    if bsz_d >= 3 and array.size(bi_zhs) > 0
+        b0 = get_last(bis, 0)
+        b2 = get_last(bis, 2)
+        lzh = get_last(bi_zhs, 0)
+        if not na(b0) and not na(b2) and not na(lzh)
+            if b0.is_up and b0.e_price > lzh.zg and b2.is_up and b2.macd_area > min_bc_area and b0.macd_area < b2.macd_area * 0.9
+                bi_zh_top := true
+            if not b0.is_up and b0.e_price < lzh.zd and not b2.is_up and b2.macd_area > min_bc_area and b0.macd_area < b2.macd_area * 0.9
+                bi_zh_bot := true
+    bool duan_trend_top = false
+    bool duan_trend_bot = false
+    bool duan_zhzh_top  = false
+    bool duan_zhzh_bot  = false
+    bool duan_zh_top    = false
+    bool duan_zh_bot    = false
+    if dsz_d >= 4
+        d0 = get_last(duans, 0)
+        d2 = get_last(duans, 2)
+        d3 = get_last(duans, 3)
+        if not na(d0) and not na(d2) and not na(d3)
+            if d0.is_up and d2.is_up
+                bool d2v = d2.macd_area > min_bc_area
+                if d2v
+                    if d0.e_price > d2.e_price and d0.macd_area < d2.macd_area * 0.9
+                        duan_trend_top := true
+                    if d0.e_price <= d2.e_price * 1.002 and d0.macd_area < d2.macd_area * 0.75
+                        duan_zhzh_top := true
+            if not d0.is_up and not d2.is_up
+                bool d2v = d2.macd_area > min_bc_area
+                if d2v
+                    if d0.e_price < d2.e_price and d0.macd_area < d2.macd_area * 0.9
+                        duan_trend_bot := true
+                    if d0.e_price >= d2.e_price * 0.998 and d0.macd_area < d2.macd_area * 0.75
+                        duan_zhzh_bot := true
+    if dsz_d >= 3 and array.size(duan_zhs) > 0
+        d0 = get_last(duans, 0)
+        d2 = get_last(duans, 2)
+        ldzh = get_last(duan_zhs, 0)
+        if not na(d0) and not na(d2) and not na(ldzh)
+            if d0.is_up and d0.e_price > ldzh.zg and d2.is_up and d2.macd_area > min_bc_area and d0.macd_area < d2.macd_area * 0.9
+                duan_zh_top := true
+            if not d0.is_up and d0.e_price < ldzh.zd and not d2.is_up and d2.macd_area > min_bc_area and d0.macd_area < d2.macd_area * 0.9
+                duan_zh_bot := true
+    bool high_trend_top = false
+    bool high_trend_bot = false
+    if array.size(high_duans) >= 4
+        hd0 = get_last(high_duans, 0)
+        hd2 = get_last(high_duans, 2)
+        if not na(hd0) and not na(hd2) and hd2.macd_area > min_bc_area
+            if hd0.is_up and hd2.is_up and hd0.e_price > hd2.e_price and hd0.macd_area < hd2.macd_area * 0.9
+                high_trend_top := true
+            if not hd0.is_up and not hd2.is_up and hd0.e_price < hd2.e_price and hd0.macd_area < hd2.macd_area * 0.9
+                high_trend_bot := true
+    bool dual_bc_top = (bi_trend_top or bi_zh_top) and (duan_trend_top or duan_zh_top)
+    bool dual_bc_bot = (bi_trend_bot or bi_zh_bot) and (duan_trend_bot or duan_zh_bot)
+    if dual_bc_top
+        bc_c  := 15
+        is_top := true
+    else if dual_bc_bot
+        bc_c  := 15
+        is_bot := true
+    else if high_trend_top
+        bc_c  := 13
+        is_top := true
+    else if high_trend_bot
+        bc_c  := 14
+        is_bot := true
+    else if duan_trend_top
+        bc_c  := 9
+        is_top := true
+    else if duan_trend_bot
+        bc_c  := 10
+        is_bot := true
+    else if duan_zh_top
+        bc_c  := 11
+        is_top := true
+    else if duan_zh_bot
+        bc_c  := 12
+        is_bot := true
+    else if duan_zhzh_top
+        bc_c  := 7
+        is_top := true
+    else if duan_zhzh_bot
+        bc_c  := 8
+        is_bot := true
+    else if bi_trend_top
+        bc_c  := 3
+        is_top := true
+    else if bi_trend_bot
+        bc_c  := 4
+        is_bot := true
+    else if bi_zh_top
+        bc_c  := 5
+        is_top := true
+    else if bi_zh_bot
+        bc_c  := 6
+        is_bot := true
+    else if bi_zhzh_top
+        bc_c  := 1
+        is_top := true
+    else if bi_zhzh_bot
+        bc_c  := 2
+        is_bot := true
+    [bc_c, is_top, is_bot]
+
+if barstate.isconfirmed and cur_bc_class > 0
+    if (bi_cnt - bc_detect_bi_cnt) >= bc_expire_bis
+        cur_bc_class     := 0
+        top_bc           := false
+        bot_bc           := false
+        bc_detect_bi_cnt := 0
+        bc_detect_bi_up  := false
+
+if bi_changed or (barstate.isconfirmed and cur_bc_class == 0)
+    [bc_class_v, top_bc_v, bot_bc_v] = detect_bc_full()
+    if bc_class_v > 0
+        bool new_bc = bc_class_v != cur_bc_class or top_bc_v != top_bc or bot_bc_v != bot_bc
+        if new_bc or cur_bc_class == 0
+            cur_bc_class     := bc_class_v
+            top_bc           := top_bc_v
+            bot_bc           := bot_bc_v
+            bc_detect_bi_cnt := bi_cnt
+            lbi_bc = get_last(bis, 0)
+            bc_detect_bi_up  := not na(lbi_bc) ? lbi_bc.is_up : false
+    else
+        cur_bc_class     := 0
+        top_bc           := false
+        bot_bc           := false
+
+get_bc_info(int bc_c, bool is_top) =>
+    string txt = ""
+    color  col = color.gray
+    if bc_c == 1 or bc_c == 2
+        txt := is_top ? "【笔·盘整】顶背驰" : "【笔·盘整】底背驰"
+        col := color.new(#00BFFF, 20)
+    else if bc_c == 3
+        txt := "【笔·趋势】顶背驰"
+        col := color.new(#00BFFF, 0)
+    else if bc_c == 4
+        txt := "【笔·趋势】底背驰"
+        col := color.new(#00BFFF, 0)
+    else if bc_c == 5
+        txt := "【笔·中枢】顶背驰"
+        col := color.new(#1E90FF, 0)
+    else if bc_c == 6
+        txt := "【笔·中枢】底背驰"
+        col := color.new(#1E90FF, 0)
+    else if bc_c == 7
+        txt := "【段·盘整】顶背驰"
+        col := color.new(#DAA520, 20)
+    else if bc_c == 8
+        txt := "【段·盘整】底背驰"
+        col := color.new(#DAA520, 20)
+    else if bc_c == 9
+        txt := "【段·趋势】顶背驰"
+        col := color.new(#DAA520, 0)
+    else if bc_c == 10
+        txt := "【段·趋势】底背驰"
+        col := color.new(#DAA520, 0)
+    else if bc_c == 11
+        txt := "【段·中枢】顶背驰"
+        col := color.new(#FF8C00, 0)
+    else if bc_c == 12
+        txt := "【段·中枢】底背驰"
+        col := color.new(#FF8C00, 0)
+    else if bc_c == 13
+        txt := "【大级·趋势】顶背驰"
+        col := color.new(#FF00FF, 0)
+    else if bc_c == 14
+        txt := "【大级·趋势】底背驰"
+        col := color.new(#FF00FF, 0)
+    else if bc_c == 15
+        txt := "⚡【两级共振】" + (is_top ? "顶背驰" : "底背驰")
+        col := color.new(#FF4500, 0)
+    [txt, col]
+
+// ════════════════════════════════════════════════════════════
+// ██  买卖点识别
+// ════════════════════════════════════════════════════════════
+
+var int   bs_buy  = 0
+var int   bs_sell = 0
+var bool  bs_c2   = false
+var float bs_trig = na
+
+bool new_bi_just_formed = bi_changed and array.size(bis) > 0
+if barstate.isconfirmed
+    prev_bi_cnt := bi_cnt
+
+if barstate.isconfirmed and array.size(bi_zhs) > 0
+    if not price_left_zh_for_buy1 and not na(buy1_lock_zg) and close > buy1_lock_zg
+        price_left_zh_for_buy1 := true
+        buy1_lock_zg := na
+    if not price_left_zh_for_sell1 and not na(sell1_lock_zd) and close < sell1_lock_zd
+        price_left_zh_for_sell1 := true
+        sell1_lock_zd := na
+
+if new_bi_just_formed
+    bs_buy  := 0
+    bs_sell := 0
+    bs_c2   := false
+    bs_trig := na
+
+    if show_bs_points and array.size(bi_zhs) > 0
+        lzh = get_last(bi_zhs, 0)
+        lbi = get_last(bis, 0)
+
+        if not na(lzh) and not na(lbi) and lbi.num != last_bs_bi_num
+            bool same_bi_end = (lbi.e_idx == last_signal_bi_e_idx)
+
+            if not same_bi_end
+                if not lbi.is_up
+                    bool buy1_ok = bs_buy == 0 and bot_bc and cur_bc_class >= min_bc_class_1b and lbi.e_price < lzh.zd - atr_val * 0.05 and lzh.s_idx != last_buy1_zh_sidx and (lbi.num - last_buy1_bi_num) >= 6 and price_left_zh_for_buy1 and lzh.bi_cnt >= 4
+                    if buy1_ok
+                        bs_buy  := 1
+                        bs_trig := lbi.e_price
+                        last_buy1_zh_sidx      := lzh.s_idx
+                        last_buy1_bi_num        := lbi.num
+                        price_left_zh_for_buy1 := false
+                        buy1_lock_zg           := lzh.zg
+                        last_signal_bi_e_idx    := lbi.e_idx
+
+                    bool buy2_ok = bs_buy == 0 and lzh.s_idx != last_buy2_zh_sidx and lzh.s_idx != last_buy1_zh_sidx and lzh.s_idx != last_buy3_zh_sidx and (lbi.num - last_buy2_bi_num) >= 4
+                    if buy2_ok
+                        pb2 = get_last(bis, 1)
+                        if not na(pb2) and pb2.is_up and pb2.e_price > lzh.zg
+                            if lbi.e_price >= lzh.zd - atr_val * 0.5 and lbi.e_price <= lzh.zd + atr_val * 0.8
+                                bs_buy  := 2
+                                bs_trig := lzh.zd
+                                last_buy2_zh_sidx    := lzh.s_idx
+                                last_buy2_bi_num     := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+                    bool buy3_ok = bs_buy == 0 and array.size(bis) >= 2 and lzh.s_idx != last_buy3_zh_sidx and (lbi.num - last_buy3_bi_num) >= 4
+                    if buy3_ok
+                        pb3 = get_last(bis, 1)
+                        if not na(pb3) and pb3.is_up and pb3.e_price > lzh.zg + atr_val * 0.3
+                            if lbi.e_price >= lzh.zg - atr_val * 0.3 and lbi.e_price <= lzh.zg + atr_val * 0.5
+                                bs_buy  := 3
+                                bs_trig := lzh.zg
+                                last_buy3_zh_sidx    := lzh.s_idx
+                                last_buy3_bi_num     := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+                    bool buy2c_ok = bs_buy == 0 and array.size(bi_zhs) >= 2 and (lbi.num - last_buy2c_bi_num) >= 2
+                    if buy2c_ok
+                        pzh = get_last(bi_zhs, 1)
+                        if not na(pzh) and pzh.s_idx != last_buy2c_zh_sidx
+                            bool c2b_ok = lbi.e_price >= pzh.zg - atr_val * 0.5 and lbi.e_price <= pzh.zg + atr_val * 0.3
+                            bool c2b_nz = lbi.e_price > lzh.zd - atr_val * 0.3
+                            if c2b_ok and c2b_nz
+                                bs_buy  := 2
+                                bs_c2   := true
+                                bs_trig := pzh.zg
+                                last_buy2c_zh_sidx   := pzh.s_idx
+                                last_buy2c_bi_num    := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+                if lbi.is_up and bs_buy == 0
+                    bool sell1_ok = bs_sell == 0 and top_bc and cur_bc_class >= min_bc_class_1b and lbi.e_price > lzh.zg + atr_val * 0.05 and lzh.s_idx != last_sell1_zh_sidx and (lbi.num - last_sell1_bi_num) >= 6 and price_left_zh_for_sell1 and lzh.bi_cnt >= 4
+                    if sell1_ok
+                        bs_sell := -1
+                        bs_trig := lbi.e_price
+                        last_sell1_zh_sidx       := lzh.s_idx
+                        last_sell1_bi_num         := lbi.num
+                        price_left_zh_for_sell1  := false
+                        sell1_lock_zd            := lzh.zd
+                        last_signal_bi_e_idx      := lbi.e_idx
+
+                    bool sell2_far = true
+                    if array.size(bi_zhs) >= 2
+                        prev_s2zh = get_last(bi_zhs, 1)
+                        if not na(prev_s2zh) and prev_s2zh.s_idx == last_sell2_zh_sidx
+                            sell2_far := math.abs(lzh.zg - prev_s2zh.zg) > atr_val * 2
+                    bool sell2_ok = bs_sell == 0 and lzh.s_idx != last_sell2_zh_sidx and lzh.s_idx != last_sell1_zh_sidx and (lbi.num - last_sell2_bi_num) >= 4 and sell2_far
+                    if sell2_ok
+                        pb2s = get_last(bis, 1)
+                        bool pb2s_ok = not na(pb2s) and not pb2s.is_up and pb2s.e_price < lzh.zg - atr_val * 0.3 and pb2s.e_price >= lzh.zd - atr_val * 0.5
+                        if pb2s_ok
+                            if lbi.e_price >= lzh.zg - atr_val * 0.8 and lbi.e_price <= lzh.zg + atr_val * 0.3
+                                bs_sell := -2
+                                bs_trig := lzh.zg
+                                last_sell2_zh_sidx   := lzh.s_idx
+                                last_sell2_bi_num    := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+                    bool sell3_ok = bs_sell == 0 and array.size(bis) >= 2 and lzh.s_idx != last_sell3_zh_sidx and (lbi.num - last_sell3_bi_num) >= 4
+                    if sell3_ok
+                        pb3s = get_last(bis, 1)
+                        if not na(pb3s) and not pb3s.is_up and pb3s.e_price < lzh.zd - atr_val * 0.3
+                            if lbi.e_price <= lzh.zd + atr_val * 0.3 and lbi.e_price >= lzh.zd - atr_val * 0.5
+                                bs_sell := -3
+                                bs_trig := lzh.zd
+                                last_sell3_zh_sidx   := lzh.s_idx
+                                last_sell3_bi_num    := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+                    bool sell2c_ok = bs_sell == 0 and array.size(bi_zhs) >= 2 and (lbi.num - last_sell2c_bi_num) >= 2
+                    if sell2c_ok
+                        pzh = get_last(bi_zhs, 1)
+                        if not na(pzh) and pzh.s_idx != last_sell2c_zh_sidx
+                            bool c2s_ok = lbi.e_price >= pzh.zd - atr_val * 0.3 and lbi.e_price <= pzh.zd + atr_val * 0.5
+                            bool c2s_nz = lbi.e_price < lzh.zg + atr_val * 0.3
+                            if c2s_ok and c2s_nz
+                                bs_sell  := -2
+                                bs_c2    := true
+                                bs_trig  := pzh.zd
+                                last_sell2c_zh_sidx  := pzh.s_idx
+                                last_sell2c_bi_num   := lbi.num
+                                last_signal_bi_e_idx := lbi.e_idx
+
+            last_bs_bi_num := lbi.num
+
+// ════════════════════════════════════════════════════════════
+// ██  信号创建与状态机
+// FIX-LABEL-Y: 创建时同时存储笔端点实际价格(disp_price)
+// ════════════════════════════════════════════════════════════
+
+if new_bi_just_formed and (bs_buy != 0 or bs_sell != 0) and not na(bs_trig)
+    pt   = bs_buy != 0 ? bs_buy : bs_sell
+    is_b = pt > 0
+    float trig_price = is_b ? bs_trig + atr_val * 0.1 : bs_trig - atr_val * 0.1
+    float sl_price   = is_b ? trig_price - atr_val * atr_sl_mult : trig_price + atr_val * atr_sl_mult
+    float tp_price   = is_b ? trig_price + atr_val * atr_tp_mult : trig_price - atr_val * atr_tp_mult
+    float rr_v = math.abs(tp_price - trig_price) / math.max(math.abs(sl_price - trig_price), 0.0001)
+    if rr_v >= min_rr
+        lbi_for_amp = get_last(bis, 0)
+        float stored_amp = not na(lbi_for_amp) ? math.abs(lbi_for_amp.amp) : 0.0
+        // FIX-LABEL-Y: disp_price = 实际笔端点价格，用于标签Y轴，不受ZD/ZG偏移影响
+        float disp_prc = not na(lbi_for_amp) ? lbi_for_amp.e_price : bs_trig
+        array.push(bs_points, BSPoint.new(last_signal_bi_e_idx, bs_trig, disp_prc, pt, bs_c2, trig_price, sl_price, tp_price, rr_v, "待确认", 0, false, -1, stored_amp))
+        if array.size(bs_points) > 25
+            array.shift(bs_points)
+
+if barstate.isconfirmed and array.size(bs_points) > 0
+    for i = 0 to array.size(bs_points) - 1
+        sig = array.get(bs_points, i)
+        if not na(sig)
+            if sig.status == "待确认"
+                bars_since = bar_index - sig.idx
+                if bars_since > entry_window
+                    sig.status := "失效"
+                    array.set(bs_points, i, sig)
+                    continue
+                is_b  = sig.pt_type > 0
+                pt_a  = math.abs(sig.pt_type)
+                need_conf = (conservative_1b and pt_a == 1) ? 2 : 1
+                bool ok = is_b ? (close > open and (close - open) > (high - low) * 0.4 and close > close[1]) : (close < open and (open - close) > (high - low) * 0.4 and close < close[1])
+                if ok
+                    sig.confirm_cnt += 1
+                    if sig.confirm_cnt >= need_conf
+                        sig.confirmed   := true
+                        sig.confirm_bar := bar_index
+                        sig.status      := "已确认"
+                array.set(bs_points, i, sig)
+            else if sig.status == "已确认"
+                bool is_b_t = sig.pt_type > 0
+                int bars_since_confirm = bar_index - sig.confirm_bar
+                if bars_since_confirm > entry_window
+                    sig.status := "失效"
+                    array.set(bs_points, i, sig)
+                    continue
+                float dist_pct_check = math.abs(sig.trigger - close) / math.max(close, 0.001)
+                if dist_pct_check > 0.08
+                    sig.status := "失效"
+                    array.set(bs_points, i, sig)
+                    continue
+                bool trig_crossed = is_b_t ? close >= sig.trigger : close <= sig.trigger
+                if trig_crossed
+                    sig.status := "持仓中"
+                    array.set(bs_points, i, sig)
+            else if sig.status == "持仓中"
+                bool is_b_t = sig.pt_type > 0
+                if is_b_t
+                    if low <= sig.sl
+                        sig.status := "已止损"
+                    else if high >= sig.tp
+                        sig.status := "已止盈"
+                else
+                    if high >= sig.sl
+                        sig.status := "已止损"
+                    else if low <= sig.tp
+                        sig.status := "已止盈"
+                array.set(bs_points, i, sig)
+
+// ════════════════════════════════════════════════════════════
+// ██  综合信号
+// ════════════════════════════════════════════════════════════
+
+ema_bull = ema_short > ema_long
+ema_bear = ema_short < ema_long
+
+var int final_buy_last_bar  = 0
+var int final_sell_last_bar = 0
+int signal_cooldown = 8
+bool final_buy_trigger  = false
+bool final_sell_trigger = false
+
+if barstate.isconfirmed
+    bssz_sig = array.size(bs_points)
+    if bssz_sig > 0
+        for si = 0 to math.min(4, bssz_sig - 1)
+            recent_sig = array.get(bs_points, bssz_sig - 1 - si)
+            if not na(recent_sig) and recent_sig.confirmed and recent_sig.confirm_bar == bar_index
+                is_b_sig = recent_sig.pt_type > 0
+                if is_b_sig and (bar_index - final_buy_last_bar) > signal_cooldown
+                    final_buy_trigger  := true
+                    final_buy_last_bar := bar_index
+                if not is_b_sig and (bar_index - final_sell_last_bar) > signal_cooldown
+                    final_sell_trigger  := true
+                    final_sell_last_bar := bar_index
+
+bool final_buy  = final_buy_trigger
+bool final_sell = final_sell_trigger
+
+// ════════════════════════════════════════════════════════════
+// ██  绘制
+// ════════════════════════════════════════════════════════════
+
+plot(show_ema ? ema_short : na, "EMA短", color.new(color.yellow, 0), 2)
+plot(show_ema ? ema_long  : na, "EMA长", color.new(color.purple, 0), 2)
+
+// ════════════════════════════════════════════════════════════
+// ██  分型标记绘制（FIX-FX-ORPHAN：只绘制笔端点分型，过滤孤立分型）
+// ════════════════════════════════════════════════════════════
+
+if show_fractals and barstate.islast
+    // FIX-FX-ORPHAN: 重建有效笔端点 bar_index 集合
+    array.clear(bi_ep_idxs)
+    bsz_ep = array.size(bis)
+    if bsz_ep > 0
+        for _bep = 0 to bsz_ep - 1
+            _bep_b = array.get(bis, _bep)
+            if not na(_bep_b)
+                if not array.includes(bi_ep_idxs, _bep_b.s_idx)
+                    array.push(bi_ep_idxs, _bep_b.s_idx)
+                if not array.includes(bi_ep_idxs, _bep_b.e_idx)
+                    array.push(bi_ep_idxs, _bep_b.e_idx)
+    // 同时将活跃笔端点纳入有效集合
+    if not na(active_bi_s_idx) and not array.includes(bi_ep_idxs, active_bi_s_idx)
+        array.push(bi_ep_idxs, active_bi_s_idx)
+    if not na(active_bi_e_idx) and not array.includes(bi_ep_idxs, active_bi_e_idx)
+        array.push(bi_ep_idxs, active_bi_e_idx)
+
+    fsz = array.size(fxs)
+    cnt = 0
+    if fsz > 0
+        for i = 0 to fsz - 1
+            if cnt >= 40
+                break
+            f = array.get(fxs, fsz - 1 - i)
+            if not na(f) and in_range(f.idx)
+                // FIX-FX-ORPHAN: 仅绘制笔端点分型或最新未确认分型
+                // 非端点的"孤立分型"（bar_span不足、被后续分型替代）不再显示
+                bool is_bi_ep = array.includes(bi_ep_idxs, f.idx)
+                // FIX-FX-DIR: is_new分型必须与当前活跃笔方向兼容
+                // 上升笔进行中时，只有顶分型(is_top)才可能成为新端点；反之亦然
+                bool is_new_valid = f.is_new
+                if is_new_valid and not is_bi_ep
+                    // 活跃笔方向=1(上升)时，只有顶分型才有意义；=-1(下降)时只有底分型
+                    is_new_valid := (active_bi_dir == 1 and f.is_top) or (active_bi_dir == -1 and not f.is_top)
+                if is_new_valid or is_bi_ep
+                    sz_f  = is_new_valid and not is_bi_ep ? size.small : size.tiny
+                    alp_f = is_new_valid and not is_bi_ep ? 0 : 40
+                    if f.is_top
+                        label.new(f.idx, f.price, (is_new_valid and not is_bi_ep) ? "▼" : "▽", color=color.new(#FF5252, alp_f), style=label.style_label_down, size=sz_f, textcolor=color.white)
+                    else
+                        label.new(f.idx, f.price, (is_new_valid and not is_bi_ep) ? "▲" : "△", color=color.new(#4CAF50, alp_f), style=label.style_label_up, size=sz_f, textcolor=color.white)
+                    cnt += 1
+
+if show_bi and barstate.islast
+    bsz2 = array.size(bis)
+    draw_start = math.max(0, bsz2 - max_bi_draw)
+    if bsz2 > 0
+        for i = draw_start to bsz2 - 1
+            b = array.get(bis, i)
+            if not na(b) and in_range(b.s_idx)
+                line.new(b.s_idx, b.s_price, b.e_idx, b.e_price, color=color.new(c_bi, 0), width=bi_width)
+                if show_amplitude
+                    bool has_bs = false
+                    bsp_sz = array.size(bs_points)
+                    if bsp_sz > 0
+                        for bsp_i = 0 to math.min(7, bsp_sz - 1)
+                            bsp = array.get(bs_points, bsp_sz - 1 - bsp_i)
+                            if not na(bsp) and bsp.status != "失效" and math.abs(bsp.idx - b.e_idx) <= 1
+                                has_bs := true
+                                break
+                    // FIX-LABEL-OVERLAP: 检查该笔区间是否与任何段标签重叠，有则跳过笔振幅标签
+                    bool has_duan_label = false
+                    if not has_bs
+                        dsz_lbl = array.size(duans)
+                        if dsz_lbl > 0
+                            for _dli = 0 to math.min(15, dsz_lbl - 1)
+                                _dl = array.get(duans, dsz_lbl - 1 - _dli)
+                                if not na(_dl)
+                                    int d_mi = math.round((_dl.s_idx + _dl.e_idx) / 2)
+                                    int b_mi = math.round((b.s_idx + b.e_idx) / 2)
+                                    // 笔标签中点与段标签中点距离过近时视为重叠
+                                    if math.abs(d_mi - b_mi) <= math.max(3, (b.e_idx - b.s_idx) / 2)
+                                        has_duan_label := true
+                                        break
+                    if not has_bs and not has_duan_label
+                        mi = math.round((b.s_idx + b.e_idx) / 2)
+                        mp = (b.s_price + b.e_price) / 2
+                        label.new(mi, mp, fmt(math.abs(b.amp), 0), color=color.new(c_bi, 75), textcolor=color.new(c_bi, 0), style=label.style_none, size=size.small)
+    if bi_started and not na(active_bi_s_prc) and not na(active_bi_s_idx) and in_range(active_bi_s_idx)
+        line.new(active_bi_s_idx, active_bi_s_prc, bar_index, close, color=color.new(c_bi, 50), width=bi_width, style=line.style_dashed)
+
+if show_bi_zh and barstate.islast
+    zsz3 = array.size(bi_zhs)
+    cnt  = 0
+    // FIX-ZH-OVERLAP: 跟踪已绘制中枢的价格范围，过滤高度重叠的中枢
+    var array<float> drawn_zh_zg = array.new<float>()
+    var array<float> drawn_zh_zd = array.new<float>()
+    array.clear(drawn_zh_zg)
+    array.clear(drawn_zh_zd)
+    if zsz3 > 0
+        for i = 0 to zsz3 - 1
+            if cnt >= max_zh_draw
+                break
+            zh = array.get(bi_zhs, zsz3 - 1 - i)
+            if not na(zh) and in_range(zh.e_idx)
+                // FIX-ZH-OVERLAP: 检查与已绘制中枢的价格重叠度
+                bool zh_too_overlap = false
+                if array.size(drawn_zh_zg) > 0
+                    for _zoi = 0 to array.size(drawn_zh_zg) - 1
+                        float _ozg = array.get(drawn_zh_zg, _zoi)
+                        float _ozd = array.get(drawn_zh_zd, _zoi)
+                        float overlap_top = math.min(zh.zg, _ozg)
+                        float overlap_bot = math.max(zh.zd, _ozd)
+                        float overlap_h   = math.max(0.0, overlap_top - overlap_bot)
+                        float min_h       = math.min(zh.zg - zh.zd, _ozg - _ozd)
+                        if min_h > 0 and overlap_h / min_h > 0.7
+                            zh_too_overlap := true
+                            break
+                if zh_too_overlap
+                    continue
+                is_lat = i == 0
+                // FIX-ZH-EXTEND: 右延伸不超过当前bar_index
+                int zh_end_raw = is_lat ? zh.e_idx + zh_extend_right : zh.e_idx
+                int zh_end = math.min(zh_end_raw, bar_index)
+                int zh_draw_s = math.max(zh.s_idx, zh_end - visible_bars)
+                int bg_alp = is_lat ? 85 : 92
+                int bd_alp = is_lat ? 30 : 60
+                box.new(zh_draw_s, zh.zg, zh_end, zh.zd, bgcolor=color.new(c_duan_zh, bg_alp), border_color=color.new(c_duan_zh, bd_alp), border_width=bi_zh_width)
+                if show_bi_zh_axis and is_lat
+                    line.new(zh_draw_s, zh.zz, zh_end, zh.zz, color=color.new(c_duan_zh, 40), width=1, style=line.style_dashed, extend=extend.none)
+                if show_zh_price and is_lat
+                    label.new(zh_end, zh.zg, "bzg:" + fmt(zh.zg, 1), color=color.new(c_duan_zh, 20), textcolor=color.white, size=size.small, style=label.style_label_lower_left)
+                    label.new(zh_end, zh.zd, "bzd:" + fmt(zh.zd, 1), color=color.new(c_duan_zh, 20), textcolor=color.white, size=size.small, style=label.style_label_upper_left)
+                array.push(drawn_zh_zg, zh.zg)
+                array.push(drawn_zh_zd, zh.zd)
+                cnt += 1
+
+if show_duan and barstate.islast
+    dsz2 = array.size(duans)
+    cnt  = 0
+    if dsz2 > 0
+        for i = 0 to dsz2 - 1
+            if cnt >= 16
+                break
+            d = array.get(duans, dsz2 - 1 - i)
+            if not na(d) and in_range(d.e_idx)
+                // FIX-DUAN-POLYLINE: 段线沿组成笔端点折线绘制，避免直线穿越K线
+                int _bsz_seg = array.size(bis)
+                bool _drew_seg = false
+                if _bsz_seg > 0
+                    for _si = 0 to _bsz_seg - 1
+                        _sb = array.get(bis, _si)
+                        if not na(_sb) and _sb.s_idx >= d.s_idx - 1 and _sb.e_idx <= d.e_idx + 1
+                            line.new(_sb.s_idx, _sb.s_price, _sb.e_idx, _sb.e_price, color=color.new(c_duan_zh, 0), width=duan_width)
+                            _drew_seg := true
+                if not _drew_seg
+                    line.new(d.s_idx, d.s_price, d.e_idx, d.e_price, color=color.new(c_duan_zh, 0), width=duan_width)
+                if show_amplitude or show_structure
+                    mi = math.round((d.s_idx + d.e_idx) / 2)
+                    mp = (d.s_price + d.e_price) / 2
+                    string lbl_t = ""
+                    if show_amplitude
+                        lbl_t += fmt(math.abs(d.amp), 0)
+                    if show_structure and d.structure != ""
+                        lbl_t += d.structure
+                    if lbl_t != ""
+                        label.new(mi, mp, lbl_t, color=color.new(c_duan_zh, 70), textcolor=color.new(c_duan_zh, 0), style=label.style_label_center, size=size.tiny)
+                cnt += 1
+    if dsz2 > 0
+        ld_active = array.get(duans, dsz2 - 1)
+        if not na(ld_active) and in_range(ld_active.e_idx)
+            bsz_act = array.size(bis)
+            bool has_new_bi = bsz_act > 0 and array.get(bis, bsz_act - 1).e_idx > ld_active.e_idx
+            if has_new_bi
+                line.new(ld_active.e_idx, ld_active.e_price, bar_index, close, color=color.new(c_duan_zh, 45), width=duan_width, style=line.style_dashed)
+                bool act_is_up = not ld_active.is_up
+                label.new(ld_active.e_idx, ld_active.e_price, act_is_up ? "↑段" : "↓段", color=color.new(c_duan_zh, 55), textcolor=color.white, size=size.tiny, style=act_is_up ? label.style_label_up : label.style_label_down)
+    else if active_seg_valid and not na(active_seg_s_idx) and in_range(active_seg_s_idx)
+        line.new(active_seg_s_idx, active_seg_s_prc, bar_index, close, color=color.new(c_duan_zh, 45), width=duan_width, style=line.style_dashed)
+
+if show_high_duan and barstate.islast
+    hdsz = array.size(high_duans)
+    hcnt_draw = 0
+    if hdsz > 0
+        for i = 0 to hdsz - 1
+            if hcnt_draw >= 8
+                break
+            hd = array.get(high_duans, hdsz - 1 - i)
+            if not na(hd) and in_range(hd.e_idx)
+                line.new(hd.s_idx, hd.s_price, hd.e_idx, hd.e_price, color=color.new(c_high, 0), width=high_width + 1)
+                string hd_lbl = (hd.is_up ? "↑" : "↓") + fmt(math.abs(hd.amp), 0) + (hd.structure != "" ? " " + hd.structure : "")
+                label.new(hd.e_idx, hd.e_price, hd_lbl, color=color.new(c_high, 25), textcolor=color.white, size=size.small, style=hd.is_up ? label.style_label_down : label.style_label_up)
+                if i == 0
+                    label.new(hd.s_idx, hd.s_price, hd.is_up ? "大↑" : "大↓", color=color.new(c_high, 35), textcolor=color.white, size=size.small, style=hd.is_up ? label.style_label_up : label.style_label_down)
+                hcnt_draw += 1
+
+if show_duan_zh and barstate.islast
+    dzsz2 = array.size(duan_zhs)
+    cnt   = 0
+    // FIX-DZH-OVERLAP: 段中枢也增加重叠过滤，与笔中枢逻辑同步
+    var array<float> drawn_dzh_zg = array.new<float>()
+    var array<float> drawn_dzh_zd = array.new<float>()
+    array.clear(drawn_dzh_zg)
+    array.clear(drawn_dzh_zd)
+    if dzsz2 > 0
+        for i = 0 to dzsz2 - 1
+            if cnt >= 4
+                break
+            zh2 = array.get(duan_zhs, dzsz2 - 1 - i)
+            if not na(zh2) and in_range(zh2.e_idx)
+                // FIX-DZH-OVERLAP: 检查与已绘制段中枢的价格重叠度
+                bool dzh_too_overlap = false
+                if array.size(drawn_dzh_zg) > 0
+                    for _doi = 0 to array.size(drawn_dzh_zg) - 1
+                        float _dozg = array.get(drawn_dzh_zg, _doi)
+                        float _dozd = array.get(drawn_dzh_zd, _doi)
+                        float d_overlap_top = math.min(zh2.zg, _dozg)
+                        float d_overlap_bot = math.max(zh2.zd, _dozd)
+                        float d_overlap_h   = math.max(0.0, d_overlap_top - d_overlap_bot)
+                        float d_min_h       = math.min(zh2.zg - zh2.zd, _dozg - _dozd)
+                        if d_min_h > 0 and d_overlap_h / d_min_h > 0.6
+                            dzh_too_overlap := true
+                            break
+                if dzh_too_overlap
+                    continue
+                is_lat  = i == 0
+                // FIX-DZH-EXTEND: 段中枢右延伸也不超过bar_index
+                int zh_end2_raw = is_lat ? zh2.e_idx + zh_extend_right : zh2.e_idx
+                int zh_end2 = math.min(zh_end2_raw, bar_index)
+                int zh2_draw_s = math.max(zh2.s_idx, zh_end2 - visible_bars)
+                // FIX-DZH-COLOR: 段中枢配色增强对比度，边框用亮橙+白底标签
+                c_duan_zh2 = color.new(#FF6D00, 0)
+                int bg_alp2 = is_lat ? 87 : 93
+                int bd_alp2 = is_lat ? 15 : 55
+                box.new(zh2_draw_s, zh2.zg, zh_end2, zh2.zd, bgcolor=color.new(c_duan_zh2, bg_alp2), border_color=color.new(c_duan_zh2, bd_alp2), border_width=duan_zh_width)
+                if show_duan_zh_axis and is_lat
+                    line.new(zh2_draw_s, zh2.zz, zh_end2, zh2.zz, color=color.new(c_duan_zh2, 30), width=1, style=line.style_dashed, extend=extend.none)
+                // FIX-DZH-LABEL: 价格标签放在box右侧外部，避免被边框遮挡
+                if show_zh_price and is_lat
+                    int _dzh_lbl_x = math.min(zh_end2 + 2, bar_index)
+                    label.new(_dzh_lbl_x, zh2.zg, "zg:" + fmt(zh2.zg, 1), color=color.new(c_duan_zh2, 10), textcolor=color.white, size=size.small, style=label.style_label_left)
+                    label.new(_dzh_lbl_x, zh2.zd, "zd:" + fmt(zh2.zd, 1), color=color.new(c_duan_zh2, 10), textcolor=color.white, size=size.small, style=label.style_label_left)
+                array.push(drawn_dzh_zg, zh2.zg)
+                array.push(drawn_dzh_zd, zh2.zd)
+                cnt += 1
+
+// FIX-HZH-EXTEND: 大级别中枢右延伸修正，防止遮挡当前价格区域
+// 原版 zh_extend_right * 2 在小周期图（5分钟等）会延伸数百根K线到屏幕外
+if show_high_zh and barstate.islast
+    hzsz = array.size(high_zhs)
+    // FIX-HZH-OVERLAP: 大级别中枢也增加重叠过滤
+    var array<float> drawn_hzh_zg = array.new<float>()
+    var array<float> drawn_hzh_zd = array.new<float>()
+    array.clear(drawn_hzh_zg)
+    array.clear(drawn_hzh_zd)
+    int hzh_drawn = 0
+    if hzsz > 0
+        for i = 0 to math.min(hzsz - 1, 2)
+            hz = array.get(high_zhs, hzsz - 1 - i)
+            if not na(hz) and in_range(hz.e_idx)
+                // FIX-HZH-OVERLAP: 检查与已绘制大级别中枢的价格重叠度
+                bool hzh_too_overlap = false
+                if array.size(drawn_hzh_zg) > 0
+                    for _hoi = 0 to array.size(drawn_hzh_zg) - 1
+                        float _hozg = array.get(drawn_hzh_zg, _hoi)
+                        float _hozd = array.get(drawn_hzh_zd, _hoi)
+                        float h_ov_top = math.min(hz.zg, _hozg)
+                        float h_ov_bot = math.max(hz.zd, _hozd)
+                        float h_ov_h   = math.max(0.0, h_ov_top - h_ov_bot)
+                        float h_min_h  = math.min(hz.zg - hz.zd, _hozg - _hozd)
+                        if h_min_h > 0 and h_ov_h / h_min_h > 0.5
+                            hzh_too_overlap := true
+                            break
+                if hzh_too_overlap
+                    continue
+                is_lat = i == 0
+                // FIX-HZH-EXTEND: 延伸量限制在 zh_extend_right 且不超过当前bar
+                int hz_ext_bars = is_lat ? math.min(zh_extend_right, math.max(0, bar_index - hz.e_idx)) : 0
+                int hz_end = hz.e_idx + hz_ext_bars
+                int hz_draw_s = math.max(hz.s_idx, hz_end - visible_bars)
+                // FIX-HZH-ALPHA: 提高背景透明度，减少遮挡K线
+                box.new(hz_draw_s, hz.zg, hz_end, hz.zd, bgcolor=color.new(c_high, 88), border_color=color.new(c_high, 15), border_width=high_width)
+                if show_duan_zh_axis
+                    line.new(hz_draw_s, hz.zz, hz_end, hz.zz, color=color.new(c_high, 30), width=2, style=line.style_dashed)
+                if show_zh_price and is_lat
+                    // FIX-HZH-LABEL: 合并"大级别中枢"文字到ZG标签，消除堆叠
+                    label.new(hz_end, hz.zg, "大级别 ZG:" + fmt(hz.zg, 1), color=color.new(c_high, 10), textcolor=color.white, size=size.small, style=label.style_label_lower_left)
+                    label.new(hz_end, hz.zd, "ZD:" + fmt(hz.zd, 1), color=color.new(c_high, 10), textcolor=color.white, size=size.small, style=label.style_label_upper_left)
+                array.push(drawn_hzh_zg, hz.zg)
+                array.push(drawn_hzh_zd, hz.zd)
+                hzh_drawn += 1
+
+// ════════════════════════════════════════════════════════════
+// ██  背驰标签绘制（FIX-BC-DIR + FIX-BC-OVERLAP）
+// ════════════════════════════════════════════════════════════
+
+if show_beichi and barstate.islast and cur_bc_class > 0
+    lbi2 = get_last(bis, 0)
+    if not na(lbi2) and in_range(lbi2.e_idx)
+        [bc_txt, bc_col] = get_bc_info(cur_bc_class, top_bc)
+        if bc_txt != ""
+            bool cur_bi_matches  = (top_bc and lbi2.is_up) or (bot_bc and not lbi2.is_up)
+            bool detect_matches  = (bc_detect_bi_up == lbi2.is_up)
+            if cur_bi_matches and detect_matches
+                // FIX-BC-OVERLAP: 检测是否与买卖点标签位置冲突，有则偏移
+                bool has_bsp_at_same_bar = false
+                bssz_bc = array.size(bs_points)
+                if bssz_bc > 0
+                    for _bci = 0 to math.min(4, bssz_bc - 1)
+                        _bsp = array.get(bs_points, bssz_bc - 1 - _bci)
+                        if not na(_bsp) and math.abs(_bsp.idx - lbi2.e_idx) <= 1 and _bsp.status != "失效"
+                            has_bsp_at_same_bar := true
+                            break
+                int   bc_label_idx = has_bsp_at_same_bar ? lbi2.e_idx - 2 : lbi2.e_idx
+                float bc_offset    = has_bsp_at_same_bar ? atr_val * (top_bc ? 0.8 : -0.8) : 0.0
+                label.new(bc_label_idx, lbi2.e_price + bc_offset, bc_txt,
+                         color=color.new(bc_col, 20), textcolor=color.white, size=size.small,
+                         style=top_bc ? label.style_label_down : label.style_label_up)
+
+// ════════════════════════════════════════════════════════════
+// ██  买卖点标签绘制
+// FIX-LABEL-Y: 使用 sig.disp_price 替代 sig.price 作为标签Y轴坐标
+//   sig.price = bs_trig（ZD/ZG边界），不一定与笔端点对齐
+//   sig.disp_price = 实际笔端点价格，确保标签贴合笔端
+// FIX-LABEL-CROWD: 跳过与已绘制标签bar_index过近的信号，防止堆叠
+// ════════════════════════════════════════════════════════════
+
+if show_bs_points and barstate.islast
+    bssz2 = array.size(bs_points)
+    if bssz2 > 0
+        draw_cnt = math.min(8, bssz2)
+        // FIX-LABEL-CROWD: 记录本次已绘制的标签bar_index，用于间距检查
+        var array<int> drawn_label_idxs = array.new<int>()
+        array.clear(drawn_label_idxs)
+        for i = 0 to draw_cnt - 1
+            sig = array.get(bs_points, bssz2 - 1 - i)
+            if not na(sig) and in_range(sig.idx)
+                // FIX-LABEL-CROWD: 检查与已绘制标签的间距
+                bool too_close = false
+                if array.size(drawn_label_idxs) > 0 and sig.status == "失效"
+                    // 仅对失效信号做去密处理，避免删除重要的持仓/止盈/止损标签
+                    for _di = 0 to array.size(drawn_label_idxs) - 1
+                        if math.abs(array.get(drawn_label_idxs, _di) - sig.idx) < bs_label_min_gap
+                            too_close := true
+                            break
+                if too_close
+                    continue
+
+                is_b = sig.pt_type > 0
+                pt_a = math.abs(sig.pt_type)
+                string pt_nm = is_b ? (pt_a == 1 ? "一买" : pt_a == 2 ? (sig.is_class2 ? "类二买" : "二买") : "三买") : (pt_a == 1 ? "一卖" : pt_a == 2 ? (sig.is_class2 ? "类二卖" : "二卖") : "三卖")
+                color sig_col = color.gray
+                if sig.status == "失效"
+                    sig_col := color.gray
+                else if sig.status == "持仓中"
+                    sig_col := color.aqua
+                else if sig.status == "已止盈"
+                    sig_col := color.lime
+                else if sig.status == "已止损"
+                    sig_col := color.red
+                else if is_b
+                    sig_col := pt_a == 1 ? #00FF66 : pt_a == 2 ? (sig.is_class2 ? #76FF03 : #00CC55) : #009944
+                else
+                    sig_col := pt_a == 1 ? #FF4444 : pt_a == 2 ? (sig.is_class2 ? #FF6D00 : #CC3333) : #992222
+                string status_suffix = sig.status == "持仓中" ? "🟦" : sig.status == "已止盈" ? "✅" : sig.status == "已止损" ? "❌" : ""
+                lbl_str = fmt(math.abs(sig.amp), 1) + (is_b ? "↑" : "↓") + pt_nm + (sig.is_class2 ? "★" : "") + status_suffix
+
+                // FIX-LABEL-Y: 使用 disp_price（笔端点实际价格）定位标签，而非 bs_trig（ZD/ZG）
+                label.new(sig.idx, sig.disp_price, lbl_str, color=color.new(sig_col, 15), textcolor=color.white, size=size.small, style=is_b ? label.style_label_up : label.style_label_down)
+                array.push(drawn_label_idxs, sig.idx)
+
+                if show_entry and sig.status == "待确认"
+                    int trig_end = sig.idx + entry_window
+                    line.new(sig.idx, sig.trigger, trig_end, sig.trigger, color=color.new(sig_col, 0), width=2, style=line.style_dashed)
+                    line.new(sig.idx, sig.sl, trig_end, sig.sl, color=color.new(color.red, 50), width=1, style=line.style_dotted)
+                    line.new(sig.idx, sig.tp, trig_end, sig.tp, color=color.new(color.green, 50), width=1, style=line.style_dotted)
+
+plotshape(final_buy,  "综合买入", shape.triangleup,   location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(final_sell, "综合卖出", shape.triangledown, location.abovebar, color.new(color.red,  0), size=size.tiny)
+
+// ════════════════════════════════════════════════════════════
+// ██  MTF仪表板
+// ════════════════════════════════════════════════════════════
+
+var table mtf_tbl = table.new(position.bottom_right, 11, 3)
+c_up2 = #00b8a5
+c_dn2 = #b80090
+
+draw_gauge(col, tf, trend, t) =>
+    if barstate.islast
+        s  = timeframe.in_seconds(tf)
+        m  = s / 60
+        h  = m / 60
+        d  = h / 24
+        string tl = (h >= 1 and h < 24 ? str.tostring(math.round(h)) + "H" : (d >= 1 ? str.tostring(math.round(d)) + "D" : (m > 1 ? str.tostring(math.round(m)) + "M" : tf)))
+        gc = trend ? c_up2 : c_dn2
+        t.cell(col, 1, "", bgcolor=gc, width=3, height=3)
+        t.cell(col, 2, tl, text_color=chart.fg_color, text_size=size.small)
+        t.cell(col + 1, 1, "", bgcolor=color.new(color.white, 100), width=1)
+
+if show_mtf and barstate.islast
+    mtf_tbl.merge_cells(0, 0, 10, 0)
+    dir_txt = mtf_avg > 0.5 ? " ▲" : " ▼"
+    mtf_tbl.cell(0, 0, syminfo.basecurrency + dir_txt + " " + str.tostring(math.round(mtf_avg * 100)) + "%", text_color=mtf_avg > 0.5 ? c_up2 : c_dn2, text_size=size.normal)
+if show_mtf
+    draw_gauge(0, tf1, tp1, mtf_tbl)
+    draw_gauge(2, tf2, tp2, mtf_tbl)
+    draw_gauge(4, tf3, tp3, mtf_tbl)
+    draw_gauge(6, tf4, tp4, mtf_tbl)
+    draw_gauge(8, tf5, tp5, mtf_tbl)
+
+// ════════════════════════════════════════════════════════════
+// ██  主信息面板
+// ════════════════════════════════════════════════════════════
+
+if barstate.islast
+    var table tbl = table.new(position.top_right, 3, 34, bgcolor=color.new(#0d0d0d, 80), border_width=2, border_color=color.new(color.gray, 60))
+    table.cell(tbl, 0, 0, "CL·AI v7.6", bgcolor=color.new(#1a1a2e, 70), text_color=color.white, text_size=size.normal)
+    table.merge_cells(tbl, 0, 0, 2, 0)
+    row = 1
+
+    table.cell(tbl, 0, row, "价格", text_color=color.gray, text_size=size.small)
+    table.cell(tbl, 1, row, fmt(close, 2), text_color=close > close[1] ? color.lime : color.red, text_size=size.small)
+    table.merge_cells(tbl, 1, row, 2, row)
+    row += 1
+
+    if show_mtf
+        mc = mtf_avg > 0.6 ? color.lime : mtf_avg < 0.4 ? color.red : color.yellow
+        table.cell(tbl, 0, row, "MTF趋势", text_color=color.gray, text_size=size.small)
+        table.cell(tbl, 1, row, str.tostring(math.round(mtf_avg * 100)) + "%", text_color=mc, text_size=size.small)
+        table.cell(tbl, 2, row, mtf_bullish ? "多头" : mtf_bearish ? "空头" : "中性", text_color=mc, text_size=size.small)
+        row += 1
+
+    table.cell(tbl, 0, row, "笔/段", text_color=color.gray, text_size=size.small)
+    table.cell(tbl, 1, row, str.tostring(array.size(bis)), text_color=color.new(c_bi, 0), text_size=size.small)
+    table.cell(tbl, 2, row, "段:" + str.tostring(array.size(duans)), text_color=color.new(c_duan_zh, 0), text_size=size.small)
+    row += 1
+
+    table.cell(tbl, 0, row, "笔中枢", text_color=color.gray, text_size=size.small)
+    table.cell(tbl, 1, row, str.tostring(array.size(bi_zhs)), text_color=color.new(c_duan_zh, 0), text_size=size.small)
+    table.cell(tbl, 2, row, "段中枢:" + str.tostring(array.size(duan_zhs)), text_color=color.new(#FF8C00, 0), text_size=size.small)
+    row += 1
+
+    if array.size(bi_zhs) > 0
+        lzh3 = get_last(bi_zhs, 0)
+        if not na(lzh3)
+            table.cell(tbl, 0, row, "当前ZG/ZD", text_color=color.gray, text_size=size.small)
+            table.cell(tbl, 1, row, fmt(lzh3.zg, 1), text_color=color.red, text_size=size.small)
+            table.cell(tbl, 2, row, fmt(lzh3.zd, 1), text_color=color.lime, text_size=size.small)
+            row += 1
+
+    string bc_disp = "无"
+    color  bc_col2 = color.gray
+    if cur_bc_class > 0
+        [bc_t, bc_c2] = get_bc_info(cur_bc_class, top_bc)
+        bc_disp := bc_t
+        bc_col2 := bc_c2
+    table.cell(tbl, 0, row, "背驰", text_color=color.gray, text_size=size.small)
+    table.cell(tbl, 1, row, bc_disp, text_color=bc_col2, text_size=size.small)
+    table.merge_cells(tbl, 1, row, 2, row)
+    row += 1
+
+    if cur_bc_class > 0
+        string bc_level  = cur_bc_class <= 6 ? "笔级" : cur_bc_class <= 12 ? "段级" : cur_bc_class == 15 ? "两级共振" : "大级别"
+        string bc_type_s = (cur_bc_class == 1 or cur_bc_class == 2 or cur_bc_class == 7 or cur_bc_class == 8) ? "盘整型" : (cur_bc_class == 5 or cur_bc_class == 6 or cur_bc_class == 11 or cur_bc_class == 12) ? "中枢型" : cur_bc_class == 15 ? "最强级" : "趋势型"
+        color lv_col = cur_bc_class <= 6 ? color.new(#00BFFF, 0) : cur_bc_class <= 12 ? color.new(#DAA520, 0) : cur_bc_class == 15 ? color.new(#FF4500, 0) : color.new(#FF00FF, 0)
+        int bc_remaining = bc_expire_bis - (bi_cnt - bc_detect_bi_cnt)
+        table.cell(tbl, 0, row, bc_level,  text_color=lv_col, text_size=size.small)
+        table.cell(tbl, 1, row, bc_type_s, text_color=lv_col, text_size=size.small)
+        table.cell(tbl, 2, row, "No." + str.tostring(cur_bc_class) + "/15 余" + str.tostring(math.max(0, bc_remaining)) + "笔", text_color=color.gray, text_size=size.small)
+        row += 1
+
+    if array.size(duans) > 0
+        ld2 = get_last(duans, 0)
+        if not na(ld2)
+            d_col2 = ld2.is_up ? color.new(c_duan_zh, 0) : color.new(#FF8C00, 0)
+            table.cell(tbl, 0, row, "最新段", text_color=color.gray, text_size=size.small)
+            table.cell(tbl, 1, row, (ld2.is_up ? "↑ " : "↓ ") + (ld2.structure != "" ? ld2.structure : (ld2.is_up ? "上升" : "下降")), text_color=d_col2, text_size=size.small)
+            table.cell(tbl, 2, row, "振幅:" + fmt(math.abs(ld2.amp), 0), text_color=d_col2, text_size=size.small)
+            row += 1
+
+    // FIX-PANEL-REALTIME: 信号面板只显示活跃信号，不回退到过期信号
+    // 无活跃信号时改为显示当前市场实时状态分析
+    BSPoint panel_sig = na
+    bssz_p = array.size(bs_points)
+    if bssz_p > 0
+        for pi = 0 to bssz_p - 1
+            candidate = array.get(bs_points, bssz_p - 1 - pi)
+            if not na(candidate) and (candidate.status == "持仓中" or candidate.status == "已确认" or candidate.status == "待确认")
+                panel_sig := candidate
+                break
+
+    bool has_active_signal = not na(panel_sig)
+    bool panel_is_buy   = has_active_signal ? panel_sig.pt_type > 0 : false
+    bool sig_triggered  = false
+    bool sig_in_position = false
+    bool sig_tp_hit  = false
+    bool sig_sl_hit  = false
+    if has_active_signal
+        sig_in_position := panel_sig.status == "持仓中"
+        sig_triggered   := panel_is_buy ? close >= panel_sig.trigger : close <= panel_sig.trigger
+
+    if has_active_signal
+        int   pt_a2  = math.abs(panel_sig.pt_type)
+        string pt_n2 = panel_is_buy ? (pt_a2 == 1 ? "一买" : pt_a2 == 2 ? (panel_sig.is_class2 ? "类二买" : "二买") : "三买") : (pt_a2 == 1 ? "一卖" : pt_a2 == 2 ? (panel_sig.is_class2 ? "类二卖" : "二卖") : "三卖")
+        color sc3 = sig_in_position ? color.aqua : panel_sig.status == "已确认" ? color.yellow : color.gray
+        string status_disp = sig_in_position ? "🟦持仓中" : panel_sig.status
+
+        float cur_pnl_pct = na
+        if sig_in_position
+            cur_pnl_pct := panel_is_buy ? (close - panel_sig.trigger) / math.max(panel_sig.trigger - panel_sig.sl, 0.0001) : (panel_sig.trigger - close) / math.max(panel_sig.sl - panel_sig.trigger, 0.0001)
+
+        dist_to_trig = close - panel_sig.trigger
+        dist_pct     = math.round(math.abs(dist_to_trig) / panel_sig.trigger * 100, 2)
+        string dist_s = sig_in_position ? (panel_is_buy ? "持多 盈" : "持空 盈") + fmt(math.abs(cur_pnl_pct), 2) + "R" : sig_triggered ? "✅已达触发" : (panel_is_buy ? "↑差" : "↓差") + str.tostring(dist_pct) + "%"
+        color  dist_c = sig_in_position ? color.aqua : sig_triggered ? color.lime : color.yellow
+
+        table.cell(tbl, 0, row, "信号", text_color=color.white, text_size=size.small, bgcolor=color.new(sig_in_position ? #1e3a4a : #1e3a1e, 70))
+        table.merge_cells(tbl, 0, row, 2, row)
+        row += 1
+        table.cell(tbl, 0, row, pt_n2 + (panel_sig.is_class2 ? "★" : ""), text_color=sc3, text_size=size.small)
+        table.cell(tbl, 1, row, status_disp, text_color=sc3, text_size=size.small)
+        table.cell(tbl, 2, row, "R:" + fmt(panel_sig.rr, 1), text_color=sc3, text_size=size.small)
+        row += 1
+        table.cell(tbl, 0, row, "入场触发", text_color=color.gray, text_size=size.small)
+        table.cell(tbl, 1, row, fmt(panel_sig.trigger, 1), text_color=color.yellow, text_size=size.small)
+        table.cell(tbl, 2, row, dist_s, text_color=dist_c, text_size=size.small)
+        row += 1
+        string sl_lbl = panel_is_buy ? "SL↓" : "SL↑"
+        string tp_lbl = panel_is_buy ? "TP↑" : "TP↓"
+        table.cell(tbl, 0, row, sl_lbl + " / " + tp_lbl, text_color=color.gray, text_size=size.small)
+        table.cell(tbl, 1, row, fmt(panel_sig.sl, 1), text_color=color.red, text_size=size.small)
+        table.cell(tbl, 2, row, fmt(panel_sig.tp, 1), text_color=color.lime, text_size=size.small)
+        row += 1
+    else
+        // FIX-PANEL-REALTIME: 无活跃信号时显示当前市场实时状态
+        table.cell(tbl, 0, row, "信号", text_color=color.white, text_size=size.small, bgcolor=color.new(#1a1a2e, 70))
+        table.merge_cells(tbl, 0, row, 2, row)
+        row += 1
+
+        // 实时分析：笔方向 + 价格与中枢关系
+        Bi rt_bi = get_last(bis, 0)
+        string rt_bi_dir = not na(rt_bi) ? (rt_bi.is_up ? "↑上升笔" : "↓下降笔") : "—"
+        color rt_bi_col = not na(rt_bi) ? (rt_bi.is_up ? color.lime : color.red) : color.gray
+
+        // 价格与最新笔中枢的位置关系
+        string rt_zh_pos = "无中枢"
+        color  rt_zh_col = color.gray
+        if array.size(bi_zhs) > 0
+            Zhongshu rt_zh = get_last(bi_zhs, 0)
+            if not na(rt_zh)
+                if close > rt_zh.zg
+                    rt_zh_pos := "中枢上方"
+                    rt_zh_col := color.lime
+                else if close < rt_zh.zd
+                    rt_zh_pos := "中枢下方"
+                    rt_zh_col := color.red
+                else
+                    rt_zh_pos := "中枢内部"
+                    rt_zh_col := color.yellow
+
+        table.cell(tbl, 0, row, rt_bi_dir, text_color=rt_bi_col, text_size=size.small)
+        table.cell(tbl, 1, row, rt_zh_pos, text_color=rt_zh_col, text_size=size.small)
+        table.cell(tbl, 2, row, ema_bull ? "EMA多" : "EMA空", text_color=ema_bull ? color.lime : color.red, text_size=size.small)
+        row += 1
+
+        // 实时建议：基于当前背驰+笔方向+中枢位置
+        string rt_sug = "等待信号"
+        color  rt_sug_c = color.gray
+        if cur_bc_class > 0
+            if top_bc
+                rt_sug := "背驰顶 等确认做空"
+                rt_sug_c := color.red
+            else if bot_bc
+                rt_sug := "背驰底 等确认做多"
+                rt_sug_c := color.lime
+        else if not na(rt_bi) and array.size(bi_zhs) > 0
+            Zhongshu _rtzh = get_last(bi_zhs, 0)
+            if not na(_rtzh)
+                if rt_bi.is_up and close > _rtzh.zg
+                    rt_sug := "突破ZG 等回踩做多"
+                    rt_sug_c := color.new(color.lime, 20)
+                else if not rt_bi.is_up and close < _rtzh.zd
+                    rt_sug := "跌破ZD 等反弹做空"
+                    rt_sug_c := color.new(color.red, 20)
+                else if close >= _rtzh.zd and close <= _rtzh.zg
+                    rt_sug := "中枢震荡 等待方向"
+                    rt_sug_c := color.yellow
+
+        table.cell(tbl, 0, row, "实时", text_color=color.gray, text_size=size.small)
+        table.cell(tbl, 1, row, rt_sug, text_color=rt_sug_c, text_size=size.small)
+        table.merge_cells(tbl, 1, row, 2, row)
+        row += 1
+
+    table.cell(tbl, 0, row, "EMA趋势", text_color=color.gray, text_size=size.small)
+    table.cell(tbl, 1, row, ema_bull ? "多头" : "空头", text_color=ema_bull ? color.lime : color.red, text_size=size.small)
+    table.cell(tbl, 2, row, "RSI:" + fmt(rsi_v, 1), text_color=rsi_v > 70 ? color.red : rsi_v < 30 ? color.lime : color.gray, text_size=size.small)
+    row += 1
+
+    // FIX-SUG-PRIORITY: 建议优先级重构
+    // 优先级：持仓中 > 当前背驰/趋势状态 > 待确认/已确认信号 > 默认
+    // 已止盈/止损信号不再占据建议栏（它们已在信号区域显示状态）
+    string sug = "等待信号"
+    color  sc4 = color.gray
+
+    // NOTE: 获取最新笔方向，用于判断当前市场即时方向
+    Bi sug_last_bi = get_last(bis, 0)
+    bool sug_bi_up = not na(sug_last_bi) ? sug_last_bi.is_up : false
+
+    // FIX-SUG-SHORT: 建议文字精简，防止面板截断
+    // --- 优先级1: 持仓中 ---
+    if has_active_signal and sig_in_position
+        if cur_bc_class >= 9 and ((panel_is_buy and top_bc) or (not panel_is_buy and bot_bc))
+            sug := panel_is_buy ? "🟦持多 ⚠段顶背驰 跟踪止损" : "🟦持空 ⚠段底背驰 跟踪止损"
+            sc4 := color.orange
+        else if cur_bc_class >= 3 and ((panel_is_buy and top_bc) or (not panel_is_buy and bot_bc))
+            sug := panel_is_buy ? "🟦持多 笔顶背驰 关注止盈" : "🟦持空 笔底背驰 关注止盈"
+            sc4 := color.yellow
+        else
+            sug := panel_is_buy ? "🟦持多中 跟踪止损" : "🟦持空中 跟踪止损"
+            sc4 := color.aqua
+
+    // --- 优先级2: 两级共振 ---
+    else if cur_bc_class == 15
+        sug := bot_bc ? "⚡两级共振底 强力做多" : "⚡两级共振顶 强力做空"
+        sc4 := #FF4500
+
+    // --- 优先级3: 活跃买卖点 ---
+    else if has_active_signal and (panel_sig.status == "待确认" or panel_sig.status == "已确认")
+        int   pt_a_s = math.abs(panel_sig.pt_type)
+        bool  confirmed_sig = panel_sig.status == "已确认"
+        if panel_is_buy
+            if pt_a_s == 1
+                sug := not confirmed_sig ? "一买待确认 等阳K确认" : sig_triggered ? "一买✅已触发 入场" : "一买已确认 等触发价"
+                sc4 := not confirmed_sig ? #AAFFCC : sig_triggered ? #00FF66 : #55CC88
+            else if pt_a_s == 2 and panel_sig.is_class2
+                sug := not confirmed_sig ? "类二买待确认 等站上ZG" : sig_triggered ? "类二买✅ 可做多" : "类二买确认 等突破ZG"
+                sc4 := not confirmed_sig ? #CCFF88 : sig_triggered ? #76FF03 : #99CC44
+            else if pt_a_s == 2
+                sug := not confirmed_sig ? "二买待确认 等站上ZD" : sig_triggered ? "二买✅已触发 入场" : "二买已确认 等触发价"
+                sc4 := not confirmed_sig ? #88FFBB : sig_triggered ? #00CC55 : #44AA77
+            else
+                sug := not confirmed_sig ? "三买待确认 等站上ZG" : sig_triggered ? "三买✅已触发 入场" : "三买已确认 等突破ZG"
+                sc4 := not confirmed_sig ? #55AA77 : sig_triggered ? #009944 : #227755
+        else
+            if pt_a_s == 1
+                sug := not confirmed_sig ? "一卖待确认 等阴K确认" : sig_triggered ? "一卖✅已触发 做空" : "一卖已确认 等触发价"
+                sc4 := not confirmed_sig ? #FFAAAA : sig_triggered ? #FF4444 : #CC6666
+            else if pt_a_s == 2 and panel_sig.is_class2
+                sug := not confirmed_sig ? "类二卖待确认 等跌破ZD" : sig_triggered ? "类二卖✅ 可做空" : "类二卖确认 等跌破ZD"
+                sc4 := not confirmed_sig ? #FFBB88 : sig_triggered ? #FF6D00 : #CC8833
+            else if pt_a_s == 2
+                sug := not confirmed_sig ? "二卖待确认 等跌破ZG" : sig_triggered ? "二卖✅已触发 做空" : "二卖已确认 等触发价"
+                sc4 := not confirmed_sig ? #FF8888 : sig_triggered ? #CC3333 : #AA4444
+            else
+                sug := not confirmed_sig ? "三卖待确认 等跌破ZD" : sig_triggered ? "三卖✅已触发 做空" : "三卖已确认 等跌破ZD"
+                sc4 := not confirmed_sig ? #CC6666 : sig_triggered ? #992222 : #882222
+
+    // --- 优先级4: 背驰状态 ---
+    else if cur_bc_class >= 13
+        if top_bc
+            sug := ema_bear ? "大级顶背驰·EMA空 做空" : "大级顶背驰 EMA多 谨慎"
+            sc4 := ema_bear ? color.new(#FF00FF, 0) : color.orange
+        else
+            sug := ema_bull ? "大级底背驰·EMA多 做多" : "大级底背驰 EMA空 谨慎"
+            sc4 := ema_bull ? color.new(#FF00FF, 0) : color.orange
+    else if cur_bc_class >= 9
+        if top_bc
+            sug := ema_bear ? "段顶背驰·EMA空 可做空" : "段顶背驰 EMA未确认"
+            sc4 := ema_bear ? color.new(#FF8C00, 0) : color.yellow
+        else
+            sug := ema_bull ? "段底背驰·EMA多 可做多" : "段底背驰 EMA未确认"
+            sc4 := ema_bull ? color.new(#FF8C00, 0) : color.yellow
+    else if cur_bc_class >= 3
+        sug := top_bc ? "笔顶背驰 谨慎做空" : "笔底背驰 谨慎做多"
+        sc4 := color.new(#00BFFF, 0)
+
+    // --- 优先级5: EMA+笔方向 ---
+    else if ema_bull and sug_bi_up
+        sug := "EMA多+上升笔 等回调买入"
+        sc4 := color.new(color.lime, 30)
+    else if ema_bear and not sug_bi_up
+        sug := "EMA空+下降笔 等反弹卖出"
+        sc4 := color.new(color.red, 30)
+    else if ema_bull
+        sug := "EMA多头 等待信号"
+        sc4 := color.new(color.lime, 50)
+    else if ema_bear
+        sug := "EMA空头 等待信号"
+        sc4 := color.new(color.red, 50)
+    else
+        sug := "震荡 等待方向"
+        sc4 := color.gray
+
+    table.cell(tbl, 0, row, "建议", text_color=color.white, bgcolor=color.new(#1a1a2e, 70), text_size=size.small)
+    table.cell(tbl, 1, row, sug, text_color=sc4, bgcolor=color.new(#1a1a2e, 70), text_size=size.small)
+    table.merge_cells(tbl, 1, row, 2, row)
+
+// ════════════════════════════════════════════════════════════
+// ██  警报
+// ════════════════════════════════════════════════════════════
+
+if new_bi_just_formed
+    if bs_buy == 1
+        alert("🔔【一买】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  触发价:" + fmt(bs_trig, 2) + "  等待阳K反包确认", alert.freq_once_per_bar)
+    if bs_buy == 2 and not bs_c2
+        alert("🔔【二买】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  ZD:" + fmt(bs_trig, 2) + "  等待收盘站上ZD", alert.freq_once_per_bar)
+    if bs_buy == 2 and bs_c2
+        alert("🔔【类二买★】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  前中枢ZG:" + fmt(bs_trig, 2) + "  等待站上ZG确认", alert.freq_once_per_bar)
+    if bs_buy == 3
+        alert("🔔【三买】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  ZG:" + fmt(bs_trig, 2) + "  等待收盘站上ZG", alert.freq_once_per_bar)
+    if bs_sell == -1
+        alert("🔔【一卖】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  触发价:" + fmt(bs_trig, 2) + "  等待阴K吞没确认", alert.freq_once_per_bar)
+    if bs_sell == -2 and not bs_c2
+        alert("🔔【二卖】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  ZG:" + fmt(bs_trig, 2) + "  等待收盘跌破ZG", alert.freq_once_per_bar)
+    if bs_sell == -2 and bs_c2
+        alert("🔔【类二卖★】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  前中枢ZD:" + fmt(bs_trig, 2) + "  等待跌破ZD确认", alert.freq_once_per_bar)
+    if bs_sell == -3
+        alert("🔔【三卖】" + syminfo.ticker + "  价格:" + fmt(close, 2) + "  ZD:" + fmt(bs_trig, 2) + "  等待收盘跌破ZD", alert.freq_once_per_bar)
+
+if cur_bc_class == 15
+    alert("⚡【两级别共振背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2) + (bot_bc ? " 底背驰做多" : " 顶背驰做空"), alert.freq_once_per_bar)
+if cur_bc_class == 13 and top_bc
+    alert("🔴【大级别趋势顶背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+if cur_bc_class == 14 and bot_bc
+    alert("🟢【大级别趋势底背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+if cur_bc_class == 9 and top_bc
+    alert("🔴【段级趋势顶背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+if cur_bc_class == 10 and bot_bc
+    alert("🟢【段级趋势底背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+if cur_bc_class == 3 and top_bc
+    alert("🔴【笔级趋势顶背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+if cur_bc_class == 4 and bot_bc
+    alert("🟢【笔级趋势底背驰】" + syminfo.ticker + "  价格:" + fmt(close, 2), alert.freq_once_per_bar)
+
+alertcondition(new_bi_just_formed and bs_buy  == 1,                "一买信号",    "缠论一买: 等待阳K确认")
+alertcondition(new_bi_just_formed and bs_buy  == 2 and not bs_c2,  "二买信号",    "缠论二买: 等待收盘站上ZD")
+alertcondition(new_bi_just_formed and bs_buy  == 2 and bs_c2,      "类二买信号",  "缠论类二买: 前中枢ZG支撑做多")
+alertcondition(new_bi_just_formed and bs_buy  == 3,                "三买信号",    "缠论三买: 等待收盘站上ZG")
+alertcondition(new_bi_just_formed and bs_sell == -1,               "一卖信号",    "缠论一卖: 等待阴K确认")
+alertcondition(new_bi_just_formed and bs_sell == -2 and not bs_c2, "二卖信号",    "缠论二卖: 等待收盘跌破ZG")
+alertcondition(new_bi_just_formed and bs_sell == -2 and bs_c2,     "类二卖信号",  "缠论类二卖: 前中枢ZD阻力做空")
+alertcondition(new_bi_just_formed and bs_sell == -3,               "三卖信号",    "缠论三卖: 等待收盘跌破ZD")
+alertcondition(cur_bc_class == 15,                                  "两级别共振背驰", "⚡两级别共振: 最高级别信号")
+alertcondition(cur_bc_class >= 13 and top_bc,                       "大级别顶背驰",   "大级别趋势顶背驰")
+alertcondition(cur_bc_class >= 13 and bot_bc,                       "大级别底背驰",   "大级别趋势底背驰")
+alertcondition(cur_bc_class >= 9 and cur_bc_class <= 12 and top_bc, "段级顶背驰",     "段级背驰顶")
+alertcondition(cur_bc_class >= 9 and cur_bc_class <= 12 and bot_bc, "段级底背驰",     "段级背驰底")
+alertcondition(cur_bc_class >= 3 and cur_bc_class <= 6 and top_bc,  "笔级顶背驰",     "笔级背驰顶")
+alertcondition(cur_bc_class >= 3 and cur_bc_class <= 6 and bot_bc,  "笔级底背驰",     "笔级背驰底")
+alertcondition(final_buy,                                            "综合买入",       "综合买入信号")
+alertcondition(final_sell,                                           "综合卖出",       "综合卖出信号")
+alertcondition(mtf_avg > 0.8,                                        "MTF强多头",      "多时间框架一致看多")
+alertcondition(mtf_avg < 0.2,                                        "MTF强空头",      "多时间框架一致看空")
