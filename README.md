@@ -118,8 +118,19 @@ src/quant_scalper/
 Many cloud / VPS providers (incl. AWS US, GCP US, most European DCs) are blocked
 from `fapi.binance.com` with HTTP 451. **Historical data** for backtesting
 sidesteps this by using `data.binance.vision`'s public klines archive, but the
-**live runner** must run from an IP that can reach Binance Futures. If your
-deployment IP is blocked, run the bot through a VPN.
+**live runner** needs an IP that can reach Binance Futures.
+
+If your IP is blocked, run any local Clash / V2Ray / sing-box / Shadowsocks
+client and point the bot at it via the **`QS_PROXY_URL`** setting in `.env`:
+
+```ini
+# whatever your client exposes — examples:
+QS_PROXY_URL=socks5h://127.0.0.1:1080
+QS_PROXY_URL=http://127.0.0.1:7890
+```
+
+The connector will route every Binance API call through that proxy. Standard
+`HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` env vars are also honoured.
 
 ## Risk disclaimers
 

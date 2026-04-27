@@ -8,6 +8,7 @@ license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
     "ccxt>=4.4.0",
+    "PySocks>=1.7.1",
     "pandas>=2.2.0",
     "numpy>=1.26.0",
     "pydantic>=2.7.0",
@@ -58,6 +59,7 @@ ignore = [
     "B905",   # explicit strict= on zip
     "C901",   # complexity — algorithmic code is naturally complex
     "F841",   # unused local kept for clarity in indicator math
+    "SIM112", # uppercase env var rule — we deliberately check both cases
 ]
 
 [tool.ruff.lint.mccabe]

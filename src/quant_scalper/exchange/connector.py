@@ -40,10 +40,12 @@ class BinanceUMConnector:
     """ccxt-backed Binance USDT-M futures connector."""
 
     def __init__(self, *, dry_run: bool = False) -> None:
+        import os
+
         s = get_settings()
         self.settings = s
         self.dry_run = dry_run
-        params = {
+        params: dict[str, Any] = {
             "apiKey": s.binance_api_key,
             "secret": s.binance_api_secret,
             "enableRateLimit": True,
@@ -52,6 +54,21 @@ class BinanceUMConnector:
                 "adjustForTimeDifference": True,
             },
         }
+        # Honour HTTPS_PROXY / HTTP_PROXY / ALL_PROXY env vars and the
+        # explicit QS_PROXY_URL setting for users behind a Clash / V2Ray
+        # client.  ccxt forwards `proxies` straight through to its HTTP
+        # session, so socks5h://127.0.0.1:1080 works.
+        proxy = (
+            getattr(s, "proxy_url", None)
+            or os.environ.get("QS_PROXY_URL")
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("https_proxy")
+            or os.environ.get("ALL_PROXY")
+            or os.environ.get("all_proxy")
+        )
+        if proxy:
+            params["proxies"] = {"http": proxy, "https": proxy}
+            logger.info(f"BinanceUMConnector: routing via proxy {proxy}")
         self._exchange = ccxt.binanceusdm(params)
         if s.mode is not RunMode.LIVE:
             self._exchange.set_sandbox_mode(True)

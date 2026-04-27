@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///data/quant_scalper.db", alias="QS_DATABASE_URL")
     log_level: str = Field(default="INFO", alias="QS_LOG_LEVEL")
 
+    # Optional outbound proxy URL (e.g. socks5h://127.0.0.1:1080 or http://...).
+    # Used by the live Binance connector when the local IP is geo-restricted.
+    proxy_url: str | None = Field(default=None, alias="QS_PROXY_URL")
+
     @field_validator("major_symbols_csv")
     @classmethod
     def _normalize_symbols(cls, v: str) -> str:
